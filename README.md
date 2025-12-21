@@ -1,17 +1,18 @@
 # atayeb Assets Explorer
 
-Utility for exploring and managing Anno game assets from RDA archives and assets files.
+GUI utility for exploring Anno game assets by GUID lookup with intelligent caching.
 
 If my work made your day better, consider [backing](https://ko-fi.com/atayeb) its creator.
 
-**Version:** 0.1 | **Python:** 3.10+ | **Dependencies:** Standard Library Only
+**Version:** 0.2 | **Python:** 3.10+ | **Dependencies:** Standard Library Only
 
 ## Features
 
-- Extract RDA archives using RdaConsole.exe
-- Unpack XML assets from assets.xml by template type
-- Generate Name→GUID mappings (Python/JSON format)
-- GUI and CLI interfaces
+- **GUID Lookup** — Search for assets by GUID with instant cached results
+- **Asset Browser** — Navigate related assets through template references
+- **Smart Cache** — Caches found/not-found GUIDs to avoid redundant searches
+- **CLI & GUI** — Both interfaces with shared caching
+- **Asset Management** — Extract RDA archives, unpack assets, generate mappings
 
 ## Requirements
 
@@ -31,55 +32,76 @@ cd atayeb-assets-explorer
 
 ## Quick Start
 
-### GUI Mode
+### GUI Mode (Recommended)
 
 ```bash
 python main.py --ui
 ```
 
+Search for assets by GUID. The app caches results automatically.
+
 ### CLI Mode
 
 ```bash
+# Search for a GUID
+python main.py --cli asset_finder --guid 12345678 --json
+
 # Extract RDA files
 python main.py --cli extract_rda -i "annodata_00.rda"
 
-# Unpack assets from assets.xml
+# Unpack XML assets
 python main.py --cli unpack_assets -a "assets.xml"
 
 # Generate asset mappings
-python main.py --cli assets_mapper -t "AssetPool.xml" -of python
+python main.py --cli assets_mapper -t "AssetPool.xml"
+
+# Manage cache
+python main.py --cli cache_manager --clear-not-found
 ```
 
 ## Commands
+
+### asset_finder (GUID Search)
+
+```bash
+python main.py --cli asset_finder [OPTIONS]
+  --guid GUID                     GUID to search for (required)
+  --json                          Output as JSON
+```
+
+### cache_manager
+
+```bash
+python main.py --cli cache_manager [OPTIONS]
+  --clear-not-found              Clear only not-found entries
+  --clear-all                    Clear entire cache
+```
 
 ### extract_rda
 
 ```bash
 python main.py --cli extract_rda [OPTIONS]
-  -i, --input PATH                RDA file to extract
-  -o, --output PATH               Output directory (default: unpacked)
-  --filter REGEX                  Filter extracted files by regex
-  --rdaconsole-path PATH          Path to RdaConsole.exe
+  -i, --input PATH               RDA file to extract
+  -o, --output PATH              Output directory (default: unpacked)
+  --filter REGEX                 Filter by regex
 ```
 
 ### unpack_assets
 
 ```bash
 python main.py --cli unpack_assets [OPTIONS]
-  -a, --assets-file PATH          Path to assets.xml
-  -o, --output PATH               Output directory (default: unpacked/assets)
-  --filter REGEX                  Filter assets by regex pattern
+  -a, --assets-file PATH         Path to assets.xml
+  -o, --output PATH              Output directory (default: unpacked/assets)
+  --filter REGEX                 Filter by regex
 ```
 
 ### assets_mapper
 
 ```bash
 python main.py --cli assets_mapper [OPTIONS]
-  -t, --template STRING           Asset XML filename (required)
-  -ad, --assets-dir PATH          Assets directory (default: unpacked/assets)
-  -of, --output-format FORMAT     Output format: python or json (default: python)
-  -od, --output-dir PATH          Output directory (default: gen)
-  --filter REGEX                  Filter asset names by regex
+  -t, --template STRING          Asset XML filename (required)
+  -of, --output-format FORMAT    python or json (default: python)
+  --filter REGEX                 Filter asset names
 ```
 
 ## Configuration
@@ -101,38 +123,42 @@ Edit `config.json` to customize paths:
 
 All paths are relative to the project directory and automatically converted to absolute paths.
 
+## Architecture
+
+**Caching System** — Unified cache stores found assets and not-found markers. Auto-reloads when CLI modifies the cache file.
+
+**UI Layer** — Central data manager coordinating GUID searches, browser navigation, and cache interactions.
+
+**CLI Modules** — Separate routines (asset_finder, extract_rda, etc.) using shared cache and configuration.
+
 ## Project Structure
 
 ```
 src/
-├── ui.py                    # GUI interface
-├── shared/
-│   ├── config.py           # Configuration loader
-│   └── utils.py            # Shared utilities
-└── routines/
-    ├── extract_rda.py
-    ├── unpack_assets.py
-    └── assets_mapper.py
+├── ui.py                      # GUI: GUID search, asset browser
+├── cache.py                   # Unified cache with auto-reload
+├── config.py                  # Configuration loader
+├── utils.py                   # Shared utilities
+├── routines/
+│   ├── asset_finder.py       # GUID search CLI
+│   ├── cache_manager.py      # Cache management CLI
+│   ├── extract_rda.py        # RDA extraction
+│   ├── unpack_assets.py      # XML unpacking
+│   └── assets_mapper.py       # Name→GUID mapping
+└── ui_components/
+    ├── browser.py            # Asset browser widget
+    └── mapper.py             # Asset mapper widget
 
-gen/                        # Generated output files
-unpacked/                   # Extracted RDA contents
-rda_console/               # RdaConsole utility
+.cache/assets.json            # Cache file (auto-created)
 ```
 
 ## Troubleshooting
 
-**RdaConsole not found:**
-- Download from [anno-mods/RdaConsole](https://github.com/anno-mods/RdaConsole)
-- Place in `rda_console/` directory
-- Or edit `config.json` with correct path
+**GUID not found** — Results are cached. Use `python main.py --cli cache_manager --clear-not-found` to retry.
 
-**assets.xml not found:**
-- Run extraction first: `python main.py --cli extract_rda`
-- Verify path in `config.json`
+**RdaConsole missing** — Download from [anno-mods/RdaConsole](https://github.com/anno-mods/RdaConsole) and place in `rda_console/`
 
-**Asset file not found:**
-- Run unpack first: `python main.py --cli unpack_assets`
-- Verify file exists in `unpacked/assets/`
+**assets.xml missing** — Run `python main.py --cli extract_rda` first, or verify path in `config.json`
 
 ## Resources
 
