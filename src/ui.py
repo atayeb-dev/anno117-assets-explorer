@@ -9,9 +9,13 @@ extraction and processing utilities.
 # IMPORTS
 # ============================================================
 
+import argparse
 import sys
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox, ttk
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 from .config import load_config
 from .utils import setup_logging
@@ -24,7 +28,38 @@ logger = setup_logging()
 config = load_config()
 ASSETS_XML = config["paths"]["assets_xml"]
 ASSETS_DIR = config["paths"]["assets_unpack_dir"]
-APP_TITLE = "Atayeb Assets Explorer"
+APP_TITLE = "atayeb Assets Explorer"
+
+# ============================================================
+# FILE SYSTEM WATCHER
+# ============================================================
+
+
+class AssetWatcher(FileSystemEventHandler):
+    """Watch assets directory for changes and trigger UI updates."""
+
+    def __init__(self, callback):
+        """Initialize watcher with callback function."""
+        self.callback = callback
+
+    def on_modified(self, event):
+        """Handle file modification events."""
+        if event.is_directory or not event.src_path.endswith(".xml"):
+            return
+        self.callback()
+
+    def on_created(self, event):
+        """Handle file creation events."""
+        if event.is_directory or not event.src_path.endswith(".xml"):
+            return
+        self.callback()
+
+    def on_deleted(self, event):
+        """Handle file deletion events."""
+        if event.is_directory or not event.src_path.endswith(".xml"):
+            return
+        self.callback()
+
 
 # ============================================================
 # UI CLASS
@@ -32,20 +67,28 @@ APP_TITLE = "Atayeb Assets Explorer"
 
 
 class AssetExplorerUI:
-    """Main UI application for Atayeb Assets Explorer."""
+    """Main UI application for atayeb Assets Explorer."""
 
-    def __init__(self, root: tk.Tk):
+    def __init__(
+        self,
+        root: tk.Tk,
+        assets_xml: Path,
+        assets_dir: Path,
+    ):
         """
         Initialize the UI application.
 
         Args:
             root: Tkinter root window.
+            assets_xml: Path to assets.xml.
+            assets_dir: Path to assets directory.
         """
         self.root = root
         self.root.title(APP_TITLE)
 
-        # Handle window close event
-        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        # Store provided paths
+        self.assets_xml = assets_xml
+        self.assets_dir = assets_dir
 
         # Configure styles for link-like buttons
         style = ttk.Style()
@@ -60,6 +103,15 @@ class AssetExplorerUI:
         # Asset list storage for filtering
         self.all_assets = []
 
+        # Start file system watcher
+        self.observer = Observer()
+        self.observer.schedule(
+            AssetWatcher(self._update_asset_list),
+            path=str(self.assets_dir),
+            recursive=True,
+        )
+        self.observer.start()
+
         self._setup_ui()
 
         # Auto-size window to fit content
@@ -67,6 +119,10 @@ class AssetExplorerUI:
         width = self.root.winfo_reqwidth()
         height = self.root.winfo_reqheight()
         self.root.geometry(f"{width}x{height}")
+
+    # ============================================================
+    # UI SETUP
+    # ============================================================
 
     def _setup_ui(self) -> None:
         """Set up the user interface components."""
@@ -76,7 +132,7 @@ class AssetExplorerUI:
 
         title_label = ttk.Label(
             title_frame,
-            text=APP_TITLE,
+            text="Explore assets",
             font=("Arial", 16, "bold"),
         )
         title_label.pack()
@@ -106,26 +162,25 @@ class AssetExplorerUI:
         ttk.Separator(self.root, orient="horizontal").pack(fill="x", padx=10, pady=10)
 
         # Assets Exporter frame
-        reader_frame = ttk.LabelFrame(self.root, text="Assets Exporter", padding=10)
+        reader_frame = ttk.LabelFrame(self.root, text="Assets Mapper", padding=10)
         reader_frame.pack(fill="x", padx=10, pady=10)
-
-        ttk.Label(reader_frame, text="Select asset:", font=("Arial", 9)).pack(
+        ttk.Label(reader_frame, text="Template file:", font=("Arial", 9)).pack(
             anchor="w", pady=(5, 0)
         )
 
+        self.asset_combo = ttk.Combobox(reader_frame, state="readonly", width=50)
+        self.asset_combo.pack(fill="x", pady=5)
+
         # Search frame for asset filtering
         search_frame = ttk.Frame(reader_frame)
-        search_frame.pack(fill="x", pady=(0, 5))
-
-        ttk.Label(search_frame, text="Filter:", font=("Arial", 8)).pack(
+        ttk.Label(search_frame, text="Search:", font=("Arial", 9)).pack(
             side="left", padx=(0, 5)
         )
         self.asset_filter_entry = ttk.Entry(search_frame, width=30)
         self.asset_filter_entry.pack(side="left", fill="x", expand=True)
         self.asset_filter_entry.bind("<KeyRelease>", lambda e: self._filter_assets())
 
-        self.asset_combo = ttk.Combobox(reader_frame, state="readonly", width=50)
-        self.asset_combo.pack(fill="x", pady=5)
+        search_frame.pack(fill="x", pady=(0, 5))
         self._update_asset_list()
 
         ttk.Label(reader_frame, text="Output format:", font=("Arial", 9)).pack(
@@ -137,11 +192,13 @@ class AssetExplorerUI:
         self.format_combo.pack(fill="x", pady=5)
         self.format_combo.current(0)
 
-        ttk.Label(
-            reader_frame, text="Regex filter (optional):", font=("Arial", 9)
-        ).pack(anchor="w", pady=(5, 0))
-        self.filter_entry = ttk.Entry(reader_frame)
-        self.filter_entry.pack(fill="x", pady=5)
+        cli_frame = ttk.Frame(reader_frame)
+        ttk.Label(cli_frame, text="cli Filter:", font=("Arial", 9)).pack(
+            side="left", padx=(0, 5)
+        )
+        self.filter_entry = ttk.Entry(cli_frame)
+        self.filter_entry.pack(fill="x", expand=True)
+        cli_frame.pack(fill="x", pady=(0, 5))
 
         reader_button_frame = ttk.Frame(reader_frame)
         reader_button_frame.pack(fill="x", pady=10)
@@ -150,12 +207,6 @@ class AssetExplorerUI:
             reader_button_frame,
             text="Run Assets Mapper",
             command=self._run_assets_mapper,
-        ).pack(side="left", padx=5)
-
-        ttk.Button(
-            reader_button_frame,
-            text="Refresh Assets",
-            command=self._update_asset_list,
         ).pack(side="left", padx=5)
 
         # Separator
@@ -172,6 +223,10 @@ class AssetExplorerUI:
             foreground="gray",
         )
         footer_label.pack()
+
+    # ============================================================
+    # EVENT HANDLERS
+    # ============================================================
 
     def _on_initialization_clicked(self, skip_rda: bool) -> None:
         """Handle Extract RDA & Unpack Assets button click."""
@@ -193,7 +248,9 @@ class AssetExplorerUI:
             from .routines import unpack_assets
 
             # Unpack assets with default regex (empty = all assets)
-            result = unpack_assets.main(["-a", str(ASSETS_XML)] if not skip_rda else [])
+            result = unpack_assets.main(
+                ["-a", str(self.assets_xml)] if not skip_rda else []
+            )
             if result == 0:
                 messagebox.showinfo(
                     "Success",
@@ -212,12 +269,14 @@ class AssetExplorerUI:
             logger.error(f"Error: {e}")
             messagebox.showerror("Error", f"An error occurred: {e}")
 
+    # ============================================================
+    # ASSET MANAGEMENT
+    # ============================================================
+
     def _update_asset_list(self) -> None:
         """Update the list of available assets from unpacked/assets/."""
-        from pathlib import Path
-
-        if ASSETS_DIR.exists():
-            self.all_assets = sorted([f.name for f in ASSETS_DIR.glob("*.xml")])
+        if self.assets_dir.exists():
+            self.all_assets = sorted([f.name for f in self.assets_dir.glob("*.xml")])
             self.asset_combo["values"] = self.all_assets
             if self.all_assets:
                 self.asset_combo.current(0)
@@ -245,6 +304,10 @@ class AssetExplorerUI:
         # Auto-select first result if available
         if self.asset_combo["values"]:
             self.asset_combo.current(0)
+
+    # ============================================================
+    # ASSET MAPPER
+    # ============================================================
 
     def _run_assets_mapper(self) -> None:
         """Run assets mapper with selected options."""
@@ -288,11 +351,22 @@ class AssetExplorerUI:
         """Start the UI application."""
         self.root.mainloop()
 
+    # ============================================================
+    # LIFECYCLE
+    # ============================================================
+
     def _on_closing(self) -> None:
         """Handle window close event."""
         logger.info("Closing application...")
+        self.observer.stop()
+        self.observer.join()
         self.root.destroy()
         sys.exit(0)
+
+
+# ============================================================
+# MAIN
+# ============================================================
 
 
 def main(args: list[str] | None = None) -> int:
@@ -300,14 +374,35 @@ def main(args: list[str] | None = None) -> int:
     Main entry point for the UI application.
 
     Args:
-        args: Command-line arguments (ignored for UI mode).
+        args: Command-line arguments:
+              [-a ASSETS_XML] [-ad ASSETS_DIR]
 
     Returns:
         Exit code (0 on success).
     """
+    parser = argparse.ArgumentParser(description="atayeb Assets Explorer UI")
+    parser.add_argument(
+        "-a",
+        "--assets-xml",
+        type=Path,
+        default=ASSETS_XML,
+        help=f"Custom path to assets.xml file (default: {ASSETS_XML})",
+    )
+    parser.add_argument(
+        "-ad",
+        "--assets-dir",
+        type=Path,
+        default=ASSETS_DIR,
+        help=f"Custom path to assets directory (default: {ASSETS_DIR})",
+    )
+
     try:
+        parsed = parser.parse_args(args or [])
+
         root = tk.Tk()
-        app = AssetExplorerUI(root)
+        app = AssetExplorerUI(
+            root, assets_xml=parsed.assets_xml, assets_dir=parsed.assets_dir
+        )
         app.run()
         return 0
     except Exception as e:
