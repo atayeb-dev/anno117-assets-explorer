@@ -1,9 +1,8 @@
 # Ignore Anno 117 game assets
-assets.xml
-assets*.xml
-data/
-*.a7x
 *.rda
+
+# Ignore RdaConsole executable
+RdaConsole.exe
 
 # Ignore temporary or generated files
 *.log
