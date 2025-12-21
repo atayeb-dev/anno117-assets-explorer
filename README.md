@@ -1,6 +1,8 @@
 # Atayeb Assets Explorer
 
-Utility for extracting and managing Anno 1800 game assets from RDA archives.
+Utility for extracting and managing Anno game assets from RDA archives and assets files.
+
+If my work made your day better, consider [backing](https://ko-fi.com/atayeb) its creator
 
 **Version:** 2.1 | **Python:** 3.10+ | **Dependencies:** Standard Library Only
 
