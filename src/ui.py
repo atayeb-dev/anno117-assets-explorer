@@ -5,6 +5,10 @@ Provides a tkinter-based graphical interface with buttons to launch various
 extraction and processing utilities.
 """
 
+# ============================================================
+# IMPORTS
+# ============================================================
+
 import logging
 import sys
 import tkinter as tk
@@ -12,17 +16,22 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from .shared.config import load_config
-
 from .shared.utils import setup_logging
 
-# Configure logging
-logger = setup_logging()
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-# Constants
+logger = setup_logging()
 config = load_config()
 ASSETS_XML = config["paths"]["assets_xml"]
 ASSETS_DIR = config["paths"]["assets_unpack_dir"]
 APP_TITLE = "Atayeb Assets Explorer"
+
+
+# ============================================================
+# UI CLASS
+# ============================================================
 
 
 class AssetExplorerUI:

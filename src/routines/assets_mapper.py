@@ -5,6 +5,10 @@ Generates mappings from asset XML files and outputs to Python or JSON format.
 Supports optional regex filtering and flexible output locations.
 """
 
+# ============================================================
+# IMPORTS
+# ============================================================
+
 import argparse
 import json
 import logging
@@ -17,13 +21,19 @@ from typing import Optional
 from ..shared.config import load_config
 from ..shared.utils import setup_logging, sanitize_filename, generate_constant_name
 
-# Configure logging
-logger = setup_logging()
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-# Load configuration
+logger = setup_logging()
 _config = load_config()
 ASSETS_DIR = _config["paths"]["assets_unpack_dir"]
 GEN_DIR = _config["paths"]["gen_dir"]
+
+
+# ============================================================
+# PARSING
+# ============================================================
 
 
 def _parse_asset_file(
@@ -80,6 +90,11 @@ def _parse_asset_file(
     return mapping
 
 
+# ============================================================
+# OUTPUT
+# ============================================================
+
+
 def _write_python_mapping(
     output_path: Path, mapping: dict[str, int], xml_path: Path, constant_name: str
 ) -> None:
@@ -130,6 +145,11 @@ def _write_json_mapping(
         json.dump(data, f, indent=2, ensure_ascii=False)
 
     logger.info(f"JSON mapping written: {output_path}")
+
+
+# ============================================================
+# MAIN
+# ============================================================
 
 
 def main(args: list[str] | None = None) -> int:

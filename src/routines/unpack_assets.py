@@ -5,6 +5,10 @@ Extracts and filters assets from assets.xml based on regex patterns,
 generating individual XML output files grouped by asset template (Template field).
 """
 
+# ============================================================
+# IMPORTS
+# ============================================================
+
 import argparse
 import re
 import sys
@@ -16,12 +20,18 @@ from typing import DefaultDict
 from ..shared.config import load_config
 from ..shared.utils import setup_logging, sanitize_filename, indent_xml, select_file_gui
 
-# Configure logging
-logger = setup_logging()
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-# Load configuration
+logger = setup_logging()
 _config = load_config()
 UNPACK_DIR = _config["paths"]["assets_unpack_dir"]
+
+
+# ============================================================
+# LOADING
+# ============================================================
 
 
 def _load_assets(
@@ -71,6 +81,11 @@ def _load_assets(
     return assets_by_template, all_assets
 
 
+# ============================================================
+# OUTPUT
+# ============================================================
+
+
 def _write_outputs(
     assets_by_template: DefaultDict[str, list],
     unpacked_dir: Path,
@@ -104,6 +119,9 @@ def _write_outputs(
         logger.info(f"✔ {asset_template}: {len(assets)} assets → {output_path}")
 
 
+# ============================================================
+# MAIN
+# ============================================================
 def _select_file_gui() -> str:
     """
     Open file dialog to select an assets XML file.

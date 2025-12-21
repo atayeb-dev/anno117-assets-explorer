@@ -4,11 +4,20 @@ Configuration management for Atayeb Assets Explorer.
 Loads default paths and settings from config.json.
 """
 
+# ============================================================
+# IMPORTS
+# ============================================================
+
 import json
 import logging
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# MAIN
+# ============================================================
 
 
 def load_config() -> dict:

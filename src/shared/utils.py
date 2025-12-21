@@ -4,6 +4,10 @@ Utility functions for Atayeb Assets Explorer.
 Provides reusable functions for file handling, XML processing, and naming conventions.
 """
 
+# ============================================================
+# IMPORTS
+# ============================================================
+
 import json
 import logging
 import xml.etree.ElementTree as ET
@@ -12,6 +16,11 @@ from pathlib import Path
 from tkinter import Tk, filedialog
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# LOGGING & SETUP
+# ============================================================
 
 
 def setup_logging(level: int = logging.INFO) -> logging.Logger:
@@ -26,6 +35,11 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
     """
     logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
     return logging.getLogger(__name__)
+
+
+# ============================================================
+# FILE OPERATIONS
+# ============================================================
 
 
 def sanitize_filename(name: str, strict: bool = False) -> str:
@@ -80,6 +94,11 @@ def generate_constant_name(template_name: str) -> str:
     return "".join(parts) + "_MAP"
 
 
+# ============================================================
+# XML PROCESSING
+# ============================================================
+
+
 def indent_xml(elem: ET.Element, level: int = 0) -> None:
     """
     Pretty-print XML element tree with indentation.
@@ -120,6 +139,11 @@ def match_pattern(name: str, patterns: list[str]) -> bool:
         True
     """
     return any(fnmatch(name, pattern) for pattern in patterns)
+
+
+# ============================================================
+# VALIDATION
+# ============================================================
 
 
 def validate_file_exists(file_path: Path, description: str = "File") -> bool:

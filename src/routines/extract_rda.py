@@ -7,6 +7,10 @@ using the RdaConsole.exe utility. Supports file selection via GUI and filtering.
 Reference: https://github.com/anno-mods/RdaConsole
 """
 
+# ============================================================
+# IMPORTS
+# ============================================================
+
 import argparse
 import subprocess
 import sys
@@ -15,13 +19,19 @@ from pathlib import Path
 from ..shared.config import load_config
 from ..shared.utils import setup_logging, select_file_gui, validate_file_exists
 
-# Configure logging
-logger = setup_logging()
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-# Load configuration
+logger = setup_logging()
 _config = load_config()
 RDA_CONSOLE_EXEC = _config["paths"]["rda_console_exec"]
 UNPACKED_DIR = _config["paths"]["unpacked_dir"]
+
+
+# ============================================================
+# EXTRACTION
+# ============================================================
 
 
 def _extract_rda(
@@ -62,8 +72,9 @@ def _extract_rda(
     kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
     subprocess.run(cmd, **kwargs)
 
-
-def _select_file_gui() -> str:
+    # ============================================================
+    # MAIN
+    # ============================================================
     """
     Open file dialog to select an RDA file.
 
@@ -131,7 +142,7 @@ def main(args: list[str] | None = None) -> int:
     # Determine input file
     input_path = parsed.input
     if not input_path:
-        selected_file = _select_file_gui()
+        selected_file = select_file_gui()
         if not selected_file:
             logger.error("No input file selected")
             return 1

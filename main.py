@@ -5,20 +5,31 @@ Provides a dispatcher to launch different modules (CLI tools or UI) with their
 respective arguments. Supports both command-line tools and graphical interfaces.
 """
 
+# ============================================================
+# IMPORTS
+# ============================================================
+
 import argparse
 import importlib
 import logging
 import sys
 from typing import Any
 
-# Configure logging
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Constants
 CLI_PREFIX = "src.routines."
 UI_MODULE = "src.ui"
 CALLABLE_NAMES = ("main", "run", "cli", "ui")
+
+
+# ============================================================
+# DISPATCHER
+# ============================================================
 
 
 def _invoke_module(module_name: str, module_args: list[str]) -> int | None:
