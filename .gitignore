@@ -1,6 +1,7 @@
 # Generated & extracted files
 /unpacked/
 /gen/
+/.cache/
 
 # RdaConsole executable
 rda_console/RdaConsole.exe

@@ -11,15 +11,20 @@ Supports optional regex filtering and flexible output locations.
 
 import argparse
 import json
-import logging
 import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
+from ..cache import get_cached_asset, set_cached_asset
 from ..config import load_config
-from ..utils import setup_logging, sanitize_filename, generate_constant_name
+from ..utils import (
+    setup_logging,
+    sanitize_filename,
+    generate_constant_name,
+    load_xml_file,
+)
 
 # ============================================================
 # CONFIGURATION
@@ -29,7 +34,6 @@ logger = setup_logging()
 _config = load_config()
 ASSETS_DIR = _config["paths"]["assets_unpack_dir"]
 GEN_DIR = _config["paths"]["gen_dir"]
-
 
 # ============================================================
 # PARSING
@@ -56,15 +60,16 @@ def _parse_asset_file(
     if not xml_path.exists():
         raise FileNotFoundError(f"XML file not found: {xml_path}")
 
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
+    root = load_xml_file(xml_path)
+    if root is None:
+        raise RuntimeError(f"Failed to parse XML: {xml_path}")
 
     mapping = {}
     regex = re.compile(name_filter) if name_filter else None
 
-    for asset in root.findall(".//Asset"):
-        name_node = asset.find("./Values/Standard/Name")
-        guid_node = asset.find("./Values/Standard/GUID")
+    for asset in root.findall("Asset"):
+        name_node = asset.find("Values/Standard/Name")
+        guid_node = asset.find("Values/Standard/GUID")
 
         if name_node is None or guid_node is None:
             continue
@@ -86,6 +91,19 @@ def _parse_asset_file(
             continue
 
         mapping[name] = guid
+
+        # Cache the asset for future lookups
+        template_node = asset.find("Template")
+        template = template_node.text if template_node is not None else "Unknown"
+        set_cached_asset(
+            guid_str,
+            {
+                "guid": guid_str,
+                "name": name,
+                "template": template,
+                "file": xml_path.name,
+            },
+        )
 
     return mapping
 

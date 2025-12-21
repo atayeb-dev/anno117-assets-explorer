@@ -115,6 +115,10 @@ def main(args: list[str] | None = None) -> int:
     parser = _build_parser()
     parsed = parser.parse_args(args)
 
+    # Suppress logging INFO if --json flag is present (for clean output), but keep WARNING and ERROR
+    if "--json" in (args or sys.argv[1:]):
+        logger.setLevel(logging.WARNING)
+
     try:
         if parsed.cli:
             if len(parsed.cli) == 0:

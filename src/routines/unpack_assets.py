@@ -18,7 +18,13 @@ from pathlib import Path
 from typing import DefaultDict
 
 from ..config import load_config
-from ..utils import setup_logging, sanitize_filename, indent_xml, select_file_gui
+from ..utils import (
+    setup_logging,
+    sanitize_filename,
+    indent_xml,
+    select_file_gui,
+    load_xml_file,
+)
 
 # ============================================================
 # CONFIGURATION
@@ -55,8 +61,9 @@ def _load_assets(
         raise FileNotFoundError(f"assets.xml not found: {assets_xml_path}")
 
     logger.info(f"Loading: {assets_xml_path}")
-    tree = ET.parse(assets_xml_path)
-    root = tree.getroot()
+    root = load_xml_file(assets_xml_path)
+    if root is None:
+        raise RuntimeError(f"Failed to parse XML: {assets_xml_path}")
 
     assets_by_template: DefaultDict[str, list] = defaultdict(list)
     all_assets = []
@@ -65,7 +72,7 @@ def _load_assets(
     regex_pattern = re.compile(filter_regex) if filter_regex else None
 
     for asset in root.findall(".//Asset"):
-        template_node = asset.find("./Template")
+        template_node = asset.find("Template")
         if template_node is None:
             continue
 

@@ -239,3 +239,24 @@ def select_file_gui(
     root.withdraw()
     filepath = filedialog.askopenfilename(title=title, filetypes=filetypes)
     return filepath
+
+
+def load_xml_file(file_path: Path) -> ET.Element | None:
+    """
+    Load and parse XML file.
+
+    Args:
+        file_path: Path to XML file.
+
+    Returns:
+        Root element of parsed XML, or None if error.
+    """
+    try:
+        tree = ET.parse(file_path)
+        return tree.getroot()
+    except ET.ParseError as e:
+        logger.warning(f"Error parsing {file_path.name}: {e}")
+        return None
+    except OSError as e:
+        logger.warning(f"Error reading {file_path.name}: {e}")
+        return None
