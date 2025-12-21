@@ -17,8 +17,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import DefaultDict
 
-from ..shared.config import load_config
-from ..shared.utils import setup_logging, sanitize_filename, indent_xml, select_file_gui
+from ..config import load_config
+from ..utils import setup_logging, sanitize_filename, indent_xml, select_file_gui
 
 # ============================================================
 # CONFIGURATION

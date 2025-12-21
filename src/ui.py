@@ -9,14 +9,12 @@ extraction and processing utilities.
 # IMPORTS
 # ============================================================
 
-import logging
 import sys
 import tkinter as tk
-from pathlib import Path
 from tkinter import messagebox, ttk
 
-from .shared.config import load_config
-from .shared.utils import setup_logging
+from .config import load_config
+from .utils import setup_logging
 
 # ============================================================
 # CONFIGURATION
@@ -27,7 +25,6 @@ config = load_config()
 ASSETS_XML = config["paths"]["assets_xml"]
 ASSETS_DIR = config["paths"]["assets_unpack_dir"]
 APP_TITLE = "Atayeb Assets Explorer"
-
 
 # ============================================================
 # UI CLASS

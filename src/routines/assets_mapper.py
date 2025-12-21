@@ -18,8 +18,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
-from ..shared.config import load_config
-from ..shared.utils import setup_logging, sanitize_filename, generate_constant_name
+from ..config import load_config
+from ..utils import setup_logging, sanitize_filename, generate_constant_name
 
 # ============================================================
 # CONFIGURATION

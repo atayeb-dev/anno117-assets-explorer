@@ -16,8 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ..shared.config import load_config
-from ..shared.utils import setup_logging, select_file_gui, validate_file_exists
+from ..config import load_config
+from ..utils import setup_logging, select_file_gui, validate_file_exists
 
 # ============================================================
 # CONFIGURATION
