@@ -3,8 +3,7 @@
 Utility for extracting and managing Anno game assets from RDA archives and assets files.
 
 If my work made your day better, consider [backing](https://ko-fi.com/atayeb) its creator
-
---
+---
 **Version:** 0.1 | **Python:** 3.10+ | **Dependencies:** Standard Library Only
 ---
 
