@@ -1,4 +1,4 @@
-# Atayeb Assets Explorer
+# atayeb Assets Explorer
 
 Utility for exploring and managing Anno game assets from RDA archives and assets files.
 
