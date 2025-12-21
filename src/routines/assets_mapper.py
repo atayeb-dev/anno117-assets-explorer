@@ -1,0 +1,235 @@
+"""
+Assets Mapper - Create asset name-to-GUID mappings from XML files.
+
+Generates mappings from asset XML files and outputs to Python or JSON format.
+Supports optional regex filtering and flexible output locations.
+"""
+
+import argparse
+import json
+import logging
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from typing import Optional
+
+from ..shared.config import load_config
+from ..shared.utils import setup_logging, sanitize_filename, generate_constant_name
+
+# Configure logging
+logger = setup_logging()
+
+# Load configuration
+_config = load_config()
+ASSETS_DIR = _config["paths"]["assets_unpack_dir"]
+GEN_DIR = _config["paths"]["gen_dir"]
+
+
+def _parse_asset_file(
+    xml_path: Path, name_filter: Optional[str] = None
+) -> dict[str, int]:
+    """
+    Parse XML asset file and create Name -> GUID mapping.
+
+    Args:
+        xml_path: Path to the asset XML file to parse.
+        name_filter: Optional regex pattern to filter asset names.
+
+    Returns:
+        Dictionary mapping asset names (str) to GUIDs (int).
+
+    Raises:
+        FileNotFoundError: If XML file not found.
+        ET.ParseError: If XML is malformed.
+    """
+    if not xml_path.exists():
+        raise FileNotFoundError(f"XML file not found: {xml_path}")
+
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+
+    mapping = {}
+    regex = re.compile(name_filter) if name_filter else None
+
+    for asset in root.findall(".//Asset"):
+        name_node = asset.find("./Values/Standard/Name")
+        guid_node = asset.find("./Values/Standard/GUID")
+
+        if name_node is None or guid_node is None:
+            continue
+
+        name = name_node.text.strip() if name_node.text else ""
+        guid_str = guid_node.text.strip() if guid_node.text else ""
+
+        if not name or not guid_str:
+            continue
+
+        try:
+            guid = int(guid_str)
+        except ValueError:
+            logger.warning(f"Invalid GUID value: {guid_str} for asset: {name}")
+            continue
+
+        # Apply regex filter if provided
+        if regex and not regex.search(name):
+            continue
+
+        mapping[name] = guid
+
+    return mapping
+
+
+def _write_python_mapping(
+    output_path: Path, mapping: dict[str, int], xml_path: Path, constant_name: str
+) -> None:
+    """
+    Write asset mapping to Python file.
+
+    Args:
+        output_path: Path to output .py file.
+        mapping: Asset name->GUID dictionary.
+        xml_path: Source XML file path (for documentation).
+        constant_name: Name of the constant to use in the file.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with output_path.open("w", encoding="utf-8") as f:
+        f.write("# Auto-generated asset pool map\n")
+        f.write(f"# Source XML: {xml_path}\n\n")
+        f.write(f"{constant_name} = {{\n")
+
+        for name, guid in sorted(mapping.items()):
+            safe_name = name.replace('"', '\\"')
+            f.write(f'    "{safe_name}": {guid},\n')
+
+        f.write("}\n")
+
+    logger.info(f"Python mapping written: {output_path}")
+
+
+def _write_json_mapping(
+    output_path: Path, mapping: dict[str, int], xml_path: Path
+) -> None:
+    """
+    Write asset mapping to JSON file.
+
+    Args:
+        output_path: Path to output .json file.
+        mapping: Asset name->GUID dictionary.
+        xml_path: Source XML file path (for documentation).
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        "source": str(xml_path),
+        "mapping": mapping,
+    }
+
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    logger.info(f"JSON mapping written: {output_path}")
+
+
+def main(args: list[str] | None = None) -> int:
+    """
+    Main entry point for assets_mapper module.
+
+    Args:
+        args: Command-line arguments (defaults to sys.argv[1:]).
+
+    Returns:
+        Exit code (0 on success, non-zero on failure).
+    """
+    parser = argparse.ArgumentParser(
+        description="Create asset name-to-GUID mappings from XML files"
+    )
+    parser.add_argument(
+        "-t",
+        "--template",
+        type=str,
+        required=True,
+        help="Asset XML filename (e.g., AssetPoolNamed.xml)",
+    )
+    parser.add_argument(
+        "-ad",
+        "--assets-dir",
+        type=str,
+        default=str(ASSETS_DIR),
+        help=f"Assets directory (default: {ASSETS_DIR})",
+    )
+    parser.add_argument(
+        "-of",
+        "--output-format",
+        type=str,
+        choices=["python", "json"],
+        default="python",
+        help="Output format (python or json)",
+    )
+    parser.add_argument(
+        "-od",
+        "--output-dir",
+        type=Path,
+        default=GEN_DIR,
+        help=f"Output directory for generated mappings (default: {GEN_DIR})",
+    )
+    parser.add_argument(
+        "--filter",
+        type=str,
+        default=None,
+        help="Optional regex pattern to filter asset names",
+    )
+
+    try:
+        parsed = parser.parse_args(args)
+
+        # Locate asset file in assets directory
+        asset_path = Path(parsed.assets_dir) / parsed.template
+
+        if not asset_path.exists():
+            logger.error(f"Asset file not found: {asset_path}")
+            return 1
+
+        logger.info(f"Parsing asset file: {asset_path}")
+
+        # Create mapping
+        mapping = _parse_asset_file(asset_path, parsed.filter)
+        logger.info(f"Extracted {len(mapping)} asset mappings")
+
+        if not mapping:
+            logger.warning("No assets found matching criteria")
+            return 1
+
+        # Prepare output
+        output_dir = parsed.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        asset_stem = asset_path.stem
+
+        # Generate output filename and constant name
+        safe_filename = sanitize_filename(asset_stem)
+        constant_name = generate_constant_name(parsed.template)
+
+        if parsed.output_format == "python":
+            output_file = output_dir / f"{safe_filename}.py"
+            _write_python_mapping(output_file, mapping, asset_path, constant_name)
+        else:  # json
+            output_file = output_dir / f"{safe_filename}.json"
+            _write_json_mapping(output_file, mapping, asset_path)
+
+        logger.info("Asset mapping complete ✓")
+        return 0
+
+    except FileNotFoundError as e:
+        logger.error(f"File error: {e}")
+        return 1
+    except ET.ParseError as e:
+        logger.error(f"XML parse error: {e}")
+        return 1
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

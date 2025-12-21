@@ -1,0 +1,11 @@
+{
+    "paths": {
+        "workdir": ".",
+        "unpacked_dir": "unpacked",
+        "rda_console_exec": "rda_console/RdaConsole.exe",
+        "assets_xml": "unpacked/data/base/config/export/assets.xml",
+        "assets_unpack_dir": "unpacked/assets",
+        "templates_dir": "unpacked/templates",
+        "gen_dir": "gen"
+    }
+}
