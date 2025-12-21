@@ -16,7 +16,7 @@ If my work made your day better, consider [backing](https://ko-fi.com/atayeb) it
 ## Requirements
 
 - Python 3.10+
-- RdaConsole.exe (download from [anno-mods/RdaConsole](https://github.com/anno-mods/RdaConsole)) (optinal)
+- RdaConsole.exe (download from [anno-mods/RdaConsole](https://github.com/anno-mods/RdaConsole)) (optional)
 
 ## Installation
 
