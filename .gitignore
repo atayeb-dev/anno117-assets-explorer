@@ -1,0 +1,16 @@
+# Ignore Anno 117 game assets
+assets.xml
+assets*.xml
+data/
+*.a7x
+*.rda
+
+# Ignore temporary or generated files
+*.log
+*.tmp
+*.bak
+
+# Python stuff (si tu fais du tooling Python)
+__pycache__/
+*.pyc
+.env
