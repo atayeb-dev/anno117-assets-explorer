@@ -1,10 +1,22 @@
-# Ouput files
-/output
+# Generated & extracted files
+/unpacked/
+/gen/
 
 # RdaConsole executable
-RdaConsole.exe
+rda_console/RdaConsole.exe
 
-# Python mess
+# Python
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.pyd
+*.egg-info/
+.Python
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
