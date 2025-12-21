@@ -61,7 +61,8 @@ def _populate_cache_for_file(xml_file: Path) -> None:
 
         guid = guid_elem.text.strip()
         # Skip if already cached
-        if get_cached_asset(guid) is not None:
+        cached = get_cached_asset(guid)
+        if cached is not None:
             continue
 
         name = name_elem.text if name_elem is not None else "Unknown"
@@ -305,6 +306,8 @@ def main(args: list[str] | None = None) -> int:
                 if parsed.related:
                     related = find_related_guids(parsed.guid, parsed.assets_dir)
                     output["related"] = related
+                else:
+                    output["related"] = []
 
                 print(json.dumps(output))
             else:

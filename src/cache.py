@@ -115,17 +115,17 @@ def set_guid_not_found(guid: str) -> None:
 
 def get_cached_asset(guid: str) -> dict | None:
     """
-    Get cached data for a GUID from the asset cache.
+    Get cached asset info for a GUID (NOT related_guids).
 
-    Returns BOTH found assets AND not_found markers.
-    Caller should check for "not_found" key to distinguish.
+    Returns found assets or not_found markers, but NOT related_guids.
+    Related GUIDs are recalculated on demand (~4ms, negligible performance cost).
 
     Args:
         guid: The GUID to look up
 
     Returns:
-        Cache entry dict if GUID is cached (asset or not_found), None otherwise.
-        Asset entry has 'guid', 'name', 'template', 'file' keys.
+        Asset dict if GUID is cached (asset or not_found), None otherwise.
+        Asset dict has 'guid', 'name', 'template', 'file' keys (no 'related').
         Not_found entry has 'not_found': True.
     """
     cache = _get_cache()
@@ -133,22 +133,34 @@ def get_cached_asset(guid: str) -> dict | None:
 
     # Return the entry if it exists (could be asset or not_found marker)
     if guid_entry:
-        return guid_entry
+        # Remove 'related' field if present (we don't cache related_guids)
+        guid_entry_copy = guid_entry.copy()
+        guid_entry_copy.pop("related", None)
+        return guid_entry_copy
     return None
 
 
-def set_cached_asset(guid: str, asset_data: dict) -> None:
+def set_cached_asset(
+    guid: str, asset_data: dict, related_guids: list[dict] = None
+) -> None:
     """
-    Cache asset data for a GUID.
+    Cache asset data for a GUID (related_guids are NOT cached).
+
+    Related GUIDs are recalculated on demand (~4ms, negligible performance cost).
+    This keeps the cache file small and lightweight.
 
     Args:
         guid: The GUID as key
         asset_data: Asset information dict with 'name', 'template', 'file', etc.
+        related_guids: Ignored (for backwards compatibility with old code)
     """
     cache = _get_cache()
 
-    # Store asset data
-    cache[guid] = asset_data
+    # Store asset data only (strip related_guids if present)
+    cache_entry = asset_data.copy()
+    cache_entry.pop("related", None)  # Remove related if present
+
+    cache[guid] = cache_entry
 
     # Save to disk
     _save_cache(cache)

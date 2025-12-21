@@ -33,7 +33,7 @@ logger = setup_logging()
 class AssetBrowserWidget:
     """
     Pure UI widget for Asset Browser - GUID search and navigation.
-    
+
     Does NOT make CLI calls directly.
     Notifies parent (ui.py) via callbacks.
     """
@@ -101,7 +101,7 @@ class AssetBrowserWidget:
 
         # Results display frame
         self.nav_info_frame = ttk.Frame(self.frame)
-        self.nav_info_frame.pack(fill="both", expand=True, pady=(10, 0))
+        self.nav_info_frame.pack(fill="both", pady=(10, 0))
 
     # ============================================================
     # EVENT HANDLERS
@@ -193,24 +193,55 @@ class AssetBrowserWidget:
         for widget in self.nav_info_frame.winfo_children():
             widget.destroy()
 
-        # Create simple content frame
-        content_frame = ttk.Frame(self.nav_info_frame)
-        content_frame.pack(fill="both", expand=True)
+        # Create scrollable container for all content
+        container_frame = ttk.Frame(self.nav_info_frame)
+        container_frame.pack(fill="both", expand=True)
+
+        # Create canvas with scrollbar
+        canvas = tk.Canvas(container_frame, highlightthickness=0, bg="white")
+        scrollbar = tk.Scrollbar(
+            container_frame, orient="vertical", command=canvas.yview, width=12
+        )
+        # Use tk.Frame instead of ttk.Frame for better compatibility with Canvas
+        scrollable_frame = tk.Frame(canvas, bg="white")
+
+        scrollable_frame.bind(
+            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Enable mouse wheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         # Asset details
         info_text = f"GUID: {asset_info['guid']}\nName: {asset_info['name']}\nTemplate: {asset_info['template']}\nFile: {asset_info['file']}"
-        ttk.Label(
-            content_frame, text=info_text, font=("Arial", 9), justify="left"
-        ).pack(anchor="w", pady=(0, 10))
+        info_label = tk.Label(
+            scrollable_frame,
+            text=info_text,
+            font=("Arial", 9),
+            justify="left",
+            bg="white",
+        )
+        info_label.pack(anchor="w", pady=(0, 10), padx=5)
 
         # Related GUIDs
         if related_guids:
             logger.info(f"Display: {len(related_guids)} related GUIDs")
-            ttk.Label(
-                content_frame,
+            related_title = tk.Label(
+                scrollable_frame,
                 text=f"Related GUIDs ({len(related_guids)}):",
                 font=("Arial", 9, "bold"),
-            ).pack(anchor="w", pady=(5, 0))
+                bg="white",
+            )
+            related_title.pack(anchor="w", pady=(5, 0), padx=5)
 
             for ref in related_guids:
                 link_text = f"{ref['guid']} (from <{ref['element_name']}>)"
@@ -222,26 +253,28 @@ class AssetBrowserWidget:
                     # Disabled link (grayed out)
                     logger.debug(f"Link disabled: {ref['guid']} is marked as not found")
                     link = tk.Label(
-                        content_frame,
+                        scrollable_frame,
                         text=link_text,
                         foreground="gray",
                         font=("Arial", 9),
                         cursor="arrow",
+                        bg="white",
                     )
                 else:
                     # Active link (clickable)
                     link = tk.Label(
-                        content_frame,
+                        scrollable_frame,
                         text=link_text,
                         foreground="darkblue",
                         font=("Arial", 9, "underline"),
                         cursor="hand2",
+                        bg="white",
                     )
                     link.bind(
                         "<Button-1>", lambda e, g=ref["guid"]: self._navigate_to_guid(g)
                     )
 
-                link.pack(anchor="w", padx=20, pady=2)
+                link.pack(anchor="w", padx=25, pady=2)
 
         # Force window resize to fit new content
         self.parent.update_idletasks()
