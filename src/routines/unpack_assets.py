@@ -122,6 +122,8 @@ def _write_outputs(
 # ============================================================
 # MAIN
 # ============================================================
+
+
 def _select_file_gui() -> str:
     """
     Open file dialog to select an assets XML file.

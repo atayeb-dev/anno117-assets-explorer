@@ -72,19 +72,10 @@ def _extract_rda(
     kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
     subprocess.run(cmd, **kwargs)
 
-    # ============================================================
-    # MAIN
-    # ============================================================
-    """
-    Open file dialog to select an RDA file.
 
-    Returns:
-        Path to selected file, or empty string if cancelled.
-    """
-    return select_file_gui(
-        title="Select an RDA file",
-        filetypes=[("RDA files", "*.rda"), ("All files", "*.*")],
-    )
+# ============================================================
+# MAIN
+# ============================================================
 
 
 def _build_parser() -> argparse.ArgumentParser:
