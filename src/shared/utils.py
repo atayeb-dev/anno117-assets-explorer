@@ -69,7 +69,7 @@ def generate_constant_name(template_name: str) -> str:
     """
     Generate Python constant name from template name.
 
-    Converts CamelCase filename to UPPER_SNAKE_CASE, appends "_MAP" suffix.
+    Converts CamelCase filename to UPPER_SNAKE_CASE.
 
     Args:
         template_name: Template filename (e.g., "AssetPoolNamed.xml").
@@ -79,7 +79,7 @@ def generate_constant_name(template_name: str) -> str:
 
     Example:
         >>> generate_constant_name("AssetPoolNamed.xml")
-        "ASSET_POOL_NAMED_MAP"
+        "ASSET_POOL_NAMED"
     """
     # Remove .xml extension and convert to UPPER_SNAKE_CASE
     stem = template_name.replace(".xml", "")
@@ -91,7 +91,7 @@ def generate_constant_name(template_name: str) -> str:
             parts.append("_")
         parts.append(char.upper())
 
-    return "".join(parts) + "_MAP"
+    return "".join(parts)
 
 
 # ============================================================
