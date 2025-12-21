@@ -1,15 +1,10 @@
-# Ignore Anno 117 game assets
-*.rda
+# Ouput files
+/output
 
-# Ignore RdaConsole executable
+# RdaConsole executable
 RdaConsole.exe
 
-# Ignore temporary or generated files
-*.log
-*.tmp
-*.bak
-
-# Python stuff (si tu fais du tooling Python)
+# Python mess
 __pycache__/
 *.pyc
 .env
