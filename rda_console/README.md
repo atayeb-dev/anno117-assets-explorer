@@ -52,3 +52,4 @@ Output files are extracted to the configured `unpacked_dir` path.
 - RdaConsole requires Windows (uses .exe)
 - The tool runs in a separate console window (CREATE_NEW_CONSOLE flag)
 - For path resolution, see the main [README.md](../README.md#configuration)
+- This is only required if you want to also extracts rda with this project. You can use it from an anno assets.xml file otherwise.
