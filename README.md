@@ -46,9 +46,6 @@ python main.py --cli unpack_assets -a "assets.xml"
 
 # Generate asset mappings
 python main.py --cli assets_mapper -t "AssetPool.xml" -of python
-
-# Extract template mappings
-python main.py --cli template_reader -t "AssetPoolNamed.xml"
 ```
 
 ## Commands
@@ -78,16 +75,6 @@ python main.py --cli unpack_assets [OPTIONS]
 python main.py --cli assets_mapper [OPTIONS]
   -t, --template STRING           Asset XML filename (required)
   -ad, --assets-dir PATH          Assets directory (default: unpacked/assets)
-  -of, --output-format FORMAT     Output format: python or json (default: python)
-  -od, --output-dir PATH          Output directory (default: gen)
-  --filter REGEX                  Filter asset names by regex
-```
-
-### template_reader
-
-```bash
-python main.py --cli template_reader [OPTIONS]
-  -t, --template STRING           Template XML filename (required)
   -of, --output-format FORMAT     Output format: python or json (default: python)
   -od, --output-dir PATH          Output directory (default: gen)
   --filter REGEX                  Filter asset names by regex
@@ -123,8 +110,7 @@ src/
 └── routines/
     ├── extract_rda.py
     ├── unpack_assets.py
-    ├── assets_mapper.py
-    └── template_reader.py
+    └── assets_mapper.py
 
 gen/                        # Generated output files
 unpacked/                   # Extracted RDA contents
