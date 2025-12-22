@@ -1,11 +1,15 @@
 {
     "paths": {
-        "workdir": ".",
-        "unpacked_dir": "unpacked",
-        "rda_console_exec": "rda_console/RdaConsole.exe",
-        "assets_xml": "unpacked/data/base/config/export/assets.xml",
-        "assets_unpack_dir": "unpacked/assets",
-        "templates_dir": "unpacked/templates",
-        "gen_dir": "gen"
+        "workdir": "C:\\dev\\atayeb-assets-explorer",
+        "unpacked_dir": "C:\\dev\\atayeb-assets-explorer\\unpacked",
+        "rda_console_exec": "C:\\dev\\atayeb-assets-explorer\\rda_console\\RdaConsole.exe",
+        "assets_xml": "C:\\dev\\atayeb-assets-explorer\\unpacked\\data\\base\\config\\export\\assets.xml",
+        "assets_unpack_dir": "C:\\dev\\atayeb-assets-explorer\\unpacked\\assets",
+        "gen_dir": "C:\\dev\\atayeb-assets-explorer\\gen"
+    },
+    "ui": {
+        "related_filter_keywords": [
+            "BuildModeRandomRotation"
+        ]
     }
 }

@@ -18,13 +18,14 @@ class UISetup:
     """Helper class for setting up UI components."""
 
     @staticmethod
-    def setup_main_ui(root: tk.Tk, assets_dir) -> tuple:
+    def setup_main_ui(root: tk.Tk, assets_dir, config: dict) -> tuple:
         """
         Set up the main UI components.
 
         Args:
             root: Tkinter root window
             assets_dir: Path to assets directory
+            config: Shared config dict instance (loaded once at app startup)
 
         Returns:
             Tuple of (mapper_widget, browser_widget, current_guid_var)
@@ -57,9 +58,9 @@ class UISetup:
         # Current GUID tracking for reactive updates
         current_guid_var = tk.StringVar()
 
-        # Asset Browser (right side)
+        # Asset Browser (right side) - pass shared config
         browser_widget = AssetBrowserWidget(
-            main_container, assets_dir, current_guid_var
+            main_container, assets_dir, current_guid_var, config
         )
         browser_widget.pack(side="right", fill="both", expand=True, padx=(5, 0))
 

@@ -11,8 +11,10 @@ respective arguments. Supports both command-line tools and graphical interfaces.
 
 import argparse
 import importlib
+import json
 import logging
 import sys
+from pathlib import Path
 from typing import Any
 
 # ============================================================
@@ -25,6 +27,71 @@ logger = logging.getLogger(__name__)
 CLI_PREFIX = "src.routines."
 UI_MODULE = "src.ui"
 CALLABLE_NAMES = ("main", "run", "cli", "ui")
+
+# ============================================================
+# CONFIG SETUP
+# ============================================================
+
+
+def _setup_custom_config(config_path: Path) -> None:
+    """
+    Setup custom config by creating a temporary config.json override.
+
+    If the custom config has 'partial: true', it will be merged with
+    the default config (custom values override, missing values inherit).
+
+    Args:
+        config_path: Path to custom config file.
+    """
+    if not config_path.exists():
+        raise FileNotFoundError(f"Custom config file not found: {config_path}")
+
+    # Load both configs
+    default_config_path = Path.cwd() / "config.json"
+    with open(default_config_path, "r", encoding="utf-8") as f:
+        default_config = json.load(f)
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        custom_config = json.load(f)
+
+    # Merge if partial=true
+    if custom_config.get("partial", False):
+        logger.info(f"Merging partial config from {config_path} with default config")
+        merged_config = _deep_merge(default_config, custom_config)
+    else:
+        logger.info(f"Using custom config from {config_path}")
+        merged_config = custom_config
+
+    # Write merged config to default location
+    with open(default_config_path, "w", encoding="utf-8") as f:
+        json.dump(merged_config, f, indent=4)
+
+    logger.info(f"Config applied: {config_path}")
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """
+    Deep merge override dict into base dict.
+
+    Override values take precedence. Missing values inherit from base.
+
+    Args:
+        base: Base configuration dictionary.
+        override: Override configuration dictionary.
+
+    Returns:
+        Merged configuration dictionary.
+    """
+    result = base.copy()
+
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+
+    return result
+
 
 # ============================================================
 # DISPATCHER
@@ -85,6 +152,13 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Atayeb Assets Explorer - Asset extraction and management utility"
     )
     parser.add_argument(
+        "-cfg",
+        "--config",
+        type=Path,
+        default=None,
+        help="Custom config.json file (supports partial configs with 'partial: true')",
+    )
+    parser.add_argument(
         "-c",
         "--cli",
         nargs=argparse.REMAINDER,
@@ -118,6 +192,10 @@ def main(args: list[str] | None = None) -> int:
     # Suppress logging INFO if --json flag is present (for clean output), but keep WARNING and ERROR
     if "--json" in (args or sys.argv[1:]):
         logger.setLevel(logging.WARNING)
+
+    # Handle custom config file if provided
+    if parsed.config:
+        _setup_custom_config(parsed.config)
 
     try:
         if parsed.cli:

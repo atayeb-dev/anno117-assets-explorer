@@ -96,6 +96,7 @@ class AssetExplorerUI:
         root: tk.Tk,
         assets_xml: Path,
         assets_dir: Path,
+        config: dict,
     ):
         """
         Initialize the UI application.
@@ -104,13 +105,15 @@ class AssetExplorerUI:
             root: Tkinter root window.
             assets_xml: Path to assets.xml.
             assets_dir: Path to assets directory.
+            config: Shared config dict instance (loaded once at app startup).
         """
         self.root = root
         self.root.title(APP_TITLE)
 
-        # Store paths
+        # Store paths and config
         self.assets_xml = assets_xml
         self.assets_dir = assets_dir
+        self.config = config  # Shared config instance
 
         # CLI manager for subprocess calls
         self.cli_manager = CLIManager(assets_dir)
@@ -123,12 +126,12 @@ class AssetExplorerUI:
         self.guid_history = []
         self.history_index = -1
 
-        # Setup UI and get widgets
+        # Setup UI and get widgets - pass shared config
         (
             self.mapper_widget,
             self.browser_widget,
             self.current_guid_var,
-        ) = UISetup.setup_main_ui(root, assets_dir)
+        ) = UISetup.setup_main_ui(root, assets_dir, config)
 
         # Setup file system watcher
         self.observer = Observer()
@@ -360,6 +363,18 @@ def main(args: list[str] | None = None) -> int:
     """
     Main entry point for the UI application.
 
+    CONFIG LOADING & SHARING:
+    The config is loaded exactly ONCE at app startup and then shared across
+    all UI components (browser widget, mapper, etc.). This ensures:
+    - Single source of truth in RAM (not re-read from file on every operation)
+    - All modifications (save/load/add of filters) work with shared config
+    - Custom config files (with --config from main.py) are merged before UI starts
+
+    All save/load/add operations:
+    - SAVE: Updates RAM config AND writes to config.json
+    - ADD: Merges new keywords in RAM config AND writes to config.json
+    - LOAD: Reads from RAM config (never re-reads from file)
+
     Args:
         args: Command-line arguments:
               [-a ASSETS_XML] [-ad ASSETS_DIR]
@@ -386,9 +401,15 @@ def main(args: list[str] | None = None) -> int:
     try:
         parsed = parser.parse_args(args or [])
 
+        # Load config once at startup (shared across all UI components)
+        app_config = load_config()
+
         root = tk.Tk()
         app = AssetExplorerUI(
-            root, assets_xml=parsed.assets_xml, assets_dir=parsed.assets_dir
+            root,
+            assets_xml=parsed.assets_xml,
+            assets_dir=parsed.assets_dir,
+            config=app_config,
         )
         root.protocol("WM_DELETE_WINDOW", app._on_closing)
         app.run()

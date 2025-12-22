@@ -38,6 +38,33 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
 
 
 # ============================================================
+# JSON & SERIALIZATION
+# ============================================================
+
+
+def make_json_serializable(obj):
+    """
+    Convert non-JSON-serializable objects (like Path) to JSON-compatible types.
+
+    Recursively processes dicts and lists to convert any Path objects to strings.
+
+    Args:
+        obj: Object to convert (dict, list, Path, or any other type).
+
+    Returns:
+        JSON-serializable version of the object.
+    """
+    if isinstance(obj, dict):
+        return {k: make_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_serializable(item) for item in obj]
+    elif isinstance(obj, Path):
+        return str(obj)
+    else:
+        return obj
+
+
+# ============================================================
 # FILE OPERATIONS
 # ============================================================
 
