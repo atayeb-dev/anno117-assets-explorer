@@ -22,7 +22,6 @@ from ..utils import setup_logging
 
 logger = setup_logging()
 config = load_config()
-ASSETS_DIR = config["paths"]["assets_unpack_dir"]
 
 # ============================================================
 # ASSET MAPPER WIDGET

@@ -13,13 +13,10 @@ This module centralizes filter-related functionality from AssetBrowserWidget.
 # IMPORTS
 # ============================================================
 
-import json
 import logging
 import re
-from pathlib import Path
 
-from ..config import reload_config_if_needed
-from ..utils import make_json_serializable
+from ..config import get_ui_keywords, set_ui_keywords
 
 logger = logging.getLogger(__name__)
 
@@ -32,33 +29,17 @@ class FilterManager:
     """
     Manages blacklist filter logic and persistence.
 
-    Responsibilities:
-    - Get keywords from config (with auto-reload)
-    - Build regex from keywords
-    - Persist keywords to config
+    Uses centralized config API for all access (smart reload included).
     """
 
-    def __init__(self, config: dict):
+    def get_keywords(self) -> list[str]:
         """
-        Initialize filter manager.
-
-        Args:
-            config: Shared config dictionary (loaded once at app startup).
-        """
-        self.config = config
-
-    def get_config_keywords(self) -> list[str]:
-        """
-        Get filter keywords from config.
-
-        Reloads config from disk if it has been modified externally.
+        Get filter keywords from config with auto-reload.
 
         Returns:
-            List of keyword strings from config.
+            List of keyword strings, guaranteed fresh from disk.
         """
-        # Ensure config is up-to-date with disk
-        reload_config_if_needed(self.config)
-        return self.config.get("ui", {}).get("related_filter_keywords", [])
+        return get_ui_keywords()
 
     def build_regex(self, keywords: list[str]) -> str:
         """
@@ -79,30 +60,20 @@ class FilterManager:
         escaped = [re.escape(k) for k in keywords]
         return "|".join(escaped)
 
-    def add_to_config(self, keyword: str) -> None:
+    def add_keyword(self, keyword: str) -> None:
         """
-        Merge keyword into config without overwriting existing ones.
+        Add keyword to config without overwriting existing ones.
 
         Args:
             keyword: Single keyword string to add.
         """
         try:
-            if "ui" not in self.config:
-                self.config["ui"] = {}
-
-            existing = self.config["ui"].get("related_filter_keywords", [])
+            existing = get_ui_keywords()
 
             # Add if not already present
             if keyword not in existing:
                 existing.append(keyword)
-                self.config["ui"]["related_filter_keywords"] = existing
-
-                # Persist to file
-                config_path = Path("config.json")
-                serializable_config = make_json_serializable(self.config)
-                with open(config_path, "w") as f:
-                    json.dump(serializable_config, f, indent=4)
-
+                set_ui_keywords(existing)
                 logger.info(f"Added '{keyword}' to blacklist config")
         except Exception as e:
             logger.error(f"Failed to add keyword to config: {e}")

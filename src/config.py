@@ -181,3 +181,96 @@ def reload_config_if_needed(config: dict) -> None:
             logger.info(f"Config reloaded from {config_path}")
         except Exception as e:
             logger.error(f"Failed to reload config: {e}")
+
+
+# ============================================================
+# GLOBAL CONFIG INSTANCE
+# ============================================================
+
+_GLOBAL_CONFIG = None
+
+
+def get_config() -> dict:
+    """
+    Get global config instance with auto-reload.
+
+    Smart access: Ensures config is always up-to-date by checking MTIME.
+    All code should use this instead of accessing config directly.
+
+    Returns:
+        Configuration dictionary (guaranteed fresh from disk if modified).
+    """
+    global _GLOBAL_CONFIG
+
+    if _GLOBAL_CONFIG is None:
+        _GLOBAL_CONFIG = load_config()
+
+    # Ensure up-to-date
+    reload_config_if_needed(_GLOBAL_CONFIG)
+    return _GLOBAL_CONFIG
+
+
+# ============================================================
+# CENTRALIZED CONFIG ACCESSORS
+# ============================================================
+
+
+def get_ui_keywords() -> list[str]:
+    """
+    Get UI filter keywords from config with auto-reload.
+
+    Returns:
+        List of keyword strings, guaranteed fresh from disk.
+    """
+    config = get_config()
+    return config.get("ui", {}).get("related_filter_keywords", [])
+
+
+def set_ui_keywords(keywords: list[str]) -> None:
+    """
+    Set UI filter keywords in config and save to disk.
+
+    Args:
+        keywords: List of keyword strings to save.
+    """
+    config = get_config()
+
+    if "ui" not in config:
+        config["ui"] = {}
+
+    config["ui"]["related_filter_keywords"] = keywords
+
+    # Persist to disk
+    try:
+        from .utils import make_json_serializable
+
+        config_path = Path.cwd() / DEFAULT_CONFIG_FILE
+        serializable_config = make_json_serializable(config)
+        with open(config_path, "w") as f:
+            json.dump(serializable_config, f, indent=4)
+        logger.info(f"Saved config keywords: {keywords}")
+    except Exception as e:
+        logger.error(f"Failed to save config: {e}")
+
+
+def get_path_value(key: str) -> Path:
+    """
+    Get a path from configuration with auto-reload.
+
+    Smart access: Ensures config is fresh before accessing.
+
+    Args:
+        key: Key in config["paths"] dictionary.
+
+    Returns:
+        Path object for the requested key.
+
+    Raises:
+        KeyError: If key not found in paths.
+    """
+    config = get_config()
+
+    if key not in config.get("paths", {}):
+        raise KeyError(f"Path '{key}' not found in configuration")
+
+    return config["paths"][key]

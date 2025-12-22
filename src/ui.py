@@ -30,7 +30,7 @@ from watchdog.events import FileSystemEventHandler
 from .ui_engine._cli_manager import CLIManager
 from .ui_engine._ui_setup import UISetup
 from .cache import get_cached_asset, set_guid_not_found
-from .config import load_config
+from .config import load_config, get_path_value
 from .utils import setup_logging
 
 # ============================================================
@@ -39,8 +39,6 @@ from .utils import setup_logging
 
 logger = setup_logging()
 config = load_config()
-ASSETS_XML = config["paths"]["assets_xml"]
-ASSETS_DIR = config["paths"]["assets_unpack_dir"]
 APP_TITLE = "atayeb Assets Explorer"
 
 
@@ -387,15 +385,15 @@ def main(args: list[str] | None = None) -> int:
         "-a",
         "--assets-xml",
         type=Path,
-        default=ASSETS_XML,
-        help=f"Custom path to assets.xml file (default: {ASSETS_XML})",
+        default=get_path_value("assets_xml"),
+        help=f"Custom path to assets.xml file (default: {get_path_value('assets_xml')})",
     )
     parser.add_argument(
         "-ad",
         "--assets-dir",
         type=Path,
-        default=ASSETS_DIR,
-        help=f"Custom path to assets directory (default: {ASSETS_DIR})",
+        default=get_path_value("assets_unpack_dir"),
+        help=f"Custom path to assets directory (default: {get_path_value('assets_unpack_dir')})",
     )
 
     try:

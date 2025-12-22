@@ -68,15 +68,15 @@ class AssetBrowserWidget:
             parent: Parent tkinter widget.
             assets_dir: Path to assets directory.
             current_guid_var: StringVar for current GUID.
-            config: Shared config dict (loaded once at app startup).
+            config: Shared config dict (loaded once at app startup) - not used directly.
         """
         self.parent = parent
         self.assets_dir = assets_dir
         self.current_guid_var = current_guid_var
-        self.config = config
+        # Note: config parameter kept for compatibility, but FilterManager uses centralized API
 
-        # Initialize filter manager
-        self.filter_mgr = FilterManager(config)
+        # Initialize filter manager (no longer passes config)
+        self.filter_mgr = FilterManager()
 
         # State tracking
         self.current_asset_info = None
@@ -209,7 +209,7 @@ class AssetBrowserWidget:
         self.current_related_guids = related_guids
 
         # Build filter regex from config keywords
-        keywords = self.filter_mgr.get_config_keywords()
+        keywords = self.filter_mgr.get_keywords()
         self.current_filter_text = self.filter_mgr.build_regex(keywords)
 
         logger.info(f"Display: asset {guid} with {len(related_guids)} related GUIDs")
@@ -381,15 +381,14 @@ class AssetBrowserWidget:
         Re-applies filter to current asset display immediately.
         """
         # Add to config (updates both RAM and disk)
-        self.filter_mgr.add_to_config(element_name)
-        logger.info(f"Added '{element_name}' to blacklist config")
+        self.filter_mgr.add_keyword(element_name)
 
         # Refresh UI immediately with new filter applied
         if self.current_asset_info and self.current_related_guids is not None:
             self.display_asset_info(
                 self.current_asset_info["guid"],
                 self.current_asset_info,
-                self.current_related_guids
+                self.current_related_guids,
             )
 
     # ============================================================
