@@ -209,8 +209,8 @@ class AssetBrowserWidget:
         self.current_related_guids = related_guids
 
         # Build filter regex from config keywords
-        config_keywords = self.filter_mgr.get_config_keywords()
-        self.current_filter_text = self.filter_mgr.build_regex(config_keywords, [])
+        keywords = self.filter_mgr.get_config_keywords()
+        self.current_filter_text = self.filter_mgr.build_regex(keywords)
 
         logger.info(f"Display: asset {guid} with {len(related_guids)} related GUIDs")
 

@@ -172,11 +172,12 @@ def reload_config_if_needed(config: dict) -> None:
             # Re-convert paths
             paths = {}
             for key, value in config.get("paths", {}).items():
-                paths[key] = Path.cwd() / value if isinstance(value, str) else Path(value)
+                paths[key] = (
+                    Path.cwd() / value if isinstance(value, str) else Path(value)
+                )
             config["paths"] = paths
 
             _CONFIG_MTIME = current_mtime
             logger.info(f"Config reloaded from {config_path}")
         except Exception as e:
             logger.error(f"Failed to reload config: {e}")
-
