@@ -146,21 +146,22 @@ def reload_config_if_needed(config: dict) -> None:
     Reload config from disk if the file has been modified.
 
     Similar to cache reload logic - tracks file modification time.
-    Useful when config.json is modified externally or by other processes.
+    Uses the global config path if set, otherwise uses default config.json.
 
     Args:
         config: Configuration dictionary to reload if needed.
     """
     global _CONFIG_MTIME
 
-    config_path = Path.cwd() / DEFAULT_CONFIG_FILE
+    # Use the correct config file path
+    config_path = _GLOBAL_CONFIG_PATH or Path.cwd() / DEFAULT_CONFIG_FILE
     if not config_path.exists():
         return
 
     current_mtime = config_path.stat().st_mtime
     if _CONFIG_MTIME is None or _CONFIG_MTIME != current_mtime:
         # File is new or has changed, reload it
-        logger.debug("Config file modified, reloading from disk")
+        logger.debug(f"Config file modified, reloading from {config_path}")
         try:
             with config_path.open("r", encoding="utf-8") as f:
                 new_config = json.load(f)
@@ -188,6 +189,24 @@ def reload_config_if_needed(config: dict) -> None:
 # ============================================================
 
 _GLOBAL_CONFIG = None
+_GLOBAL_CONFIG_PATH = None  # Track which file the config came from
+
+
+def set_global_config(config: dict, config_path: str | Path | None = None) -> None:
+    """
+    Set the global config instance.
+
+    Used by main.py to initialize the global config with a custom config file.
+    All subsequent get_config() calls will use this instance.
+
+    Args:
+        config: Configuration dictionary to use globally.
+        config_path: Path to the config file (for saving updates).
+    """
+    global _GLOBAL_CONFIG, _GLOBAL_CONFIG_PATH
+    _GLOBAL_CONFIG = config
+    _GLOBAL_CONFIG_PATH = Path(config_path) if config_path else Path.cwd() / DEFAULT_CONFIG_FILE
+    logger.info(f"Global config set from: {_GLOBAL_CONFIG_PATH}")
 
 
 def get_config() -> dict:
@@ -230,6 +249,8 @@ def set_ui_keywords(keywords: list[str]) -> None:
     """
     Set UI filter keywords in config and save to disk.
 
+    Saves to the config file that was loaded (custom or default).
+
     Args:
         keywords: List of keyword strings to save.
     """
@@ -240,15 +261,15 @@ def set_ui_keywords(keywords: list[str]) -> None:
 
     config["ui"]["related_filter_keywords"] = keywords
 
-    # Persist to disk
+    # Persist to disk (use the correct config file path)
     try:
         from .utils import make_json_serializable
 
-        config_path = Path.cwd() / DEFAULT_CONFIG_FILE
+        config_path = _GLOBAL_CONFIG_PATH or Path.cwd() / DEFAULT_CONFIG_FILE
         serializable_config = make_json_serializable(config)
         with open(config_path, "w") as f:
             json.dump(serializable_config, f, indent=4)
-        logger.info(f"Saved config keywords: {keywords}")
+        logger.info(f"Saved config keywords to {config_path}: {keywords}")
     except Exception as e:
         logger.error(f"Failed to save config: {e}")
 

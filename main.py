@@ -137,12 +137,14 @@ def main(args: list[str] | None = None) -> int:
 
     # Handle custom config (loads via src.config which handles merging)
     if parsed.config:
-        from src.config import load_config
+        from src.config import load_config, set_global_config
 
         try:
-            # This will handle partial merging automatically
-            load_config(parsed.config)
-            logger.info(f"Custom config loaded: {parsed.config}")
+            # Load custom config (handles partial merging automatically)
+            custom_config = load_config(parsed.config)
+            # Set as global config for all modules to use
+            set_global_config(custom_config, config_path=parsed.config)
+            logger.info(f"Custom config loaded and set globally: {parsed.config}")
         except Exception as e:
             logger.error(f"Failed to load custom config: {e}")
             return 1
