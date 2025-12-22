@@ -103,12 +103,6 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs=argparse.REMAINDER,
         help="Run CLI: --cli MODULE [ARGS...]",
     )
-    parser.add_argument(
-        "-u",
-        "--ui",
-        nargs=argparse.REMAINDER,
-        help="Launch UI: --ui [ARGS...]",
-    )
     return parser
 
 
@@ -130,10 +124,6 @@ def main(args: list[str] | None = None) -> int:
 
     parser = _build_parser()
     parsed = parser.parse_args(args)
-
-    # Suppress INFO logging if --json flag (for clean output)
-    if "--json" in (args or sys.argv[1:]):
-        logger.setLevel(logging.WARNING)
 
     # Handle custom config (loads via src.config which handles merging)
     if parsed.config:
@@ -160,11 +150,6 @@ def main(args: list[str] | None = None) -> int:
 
             logger.info(f"Launching CLI: {module_name}")
             result = _invoke_module(full_module_name, module_args)
-            return result or 0
-
-        elif parsed.ui is not None:
-            logger.info("Launching UI")
-            result = _invoke_module(UI_MODULE, parsed.ui)
             return result or 0
 
         else:

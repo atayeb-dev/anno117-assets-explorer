@@ -6,12 +6,5 @@
         "assets_xml": "C:\\dev\\atayeb-assets-explorer\\unpacked\\data\\base\\config\\export\\assets.xml",
         "assets_unpack_dir": "C:\\dev\\atayeb-assets-explorer\\unpacked\\assets",
         "gen_dir": "C:\\dev\\atayeb-assets-explorer\\gen"
-    },
-    "ui": {
-        "related_filter_keywords": [
-            "BuildModeRandomRotation",
-            "Value",
-            "Amount"
-        ]
     }
 }

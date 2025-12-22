@@ -1,16 +1,6 @@
-"""
-Cache Manager: CLI interface for cache management.
-
-Provides a command-line interface to clear, view statistics,
-and manage the asset cache.
-"""
-
-# ============================================================
-# IMPORTS
-# ============================================================
-
 import logging
-from ..cache import clear_cache, clear_not_found_cache, get_cache_stats
+from pathlib import Path
+from ..cache import clear_cache, clear_not_found_cache, _get_cache, CACHE_FILE
 
 # ============================================================
 # CONFIGURATION
@@ -64,27 +54,18 @@ def main(args: list[str] | None = None) -> int:
             return 0
         elif parsed.clear_not_found:
             clear_not_found_cache()
-            stats = get_cache_stats()
-            print(
-                f"✓ Cleared not-found GUIDs. Cache now has {stats['total_entries']} entries"
-            )
+            cache = _get_cache()
+            print(f"✓ Cleared not-found GUIDs. Cache now has {len(cache)} entries")
             return 0
         elif parsed.stats:
-            stats = get_cache_stats()
-            print(f"\n📊 Cache Statistics:")
-            print(f"  Total entries: {stats['count']}")
-            print(f"  Cache file: {stats['cache_file']}")
-            print(f"  Exists: {stats['cache_exists']}")
-
-            # Count not-found
-            from ..cache import _ASSET_CACHE, _load_cache_from_disk
-
-            _load_cache_from_disk()
+            cache = _get_cache()
             not_found_count = sum(
-                1
-                for guid, data in _ASSET_CACHE.items()
-                if isinstance(data, dict) and data.get("not_found") is True
+                1 for entry in cache.values() if entry.get("not_found", False)
             )
+            print(f"\n📊 Cache Statistics:")
+            print(f"  Total entries: {len(cache)}")
+            print(f"  Cache file: {CACHE_FILE}")
+            print(f"  Exists: {CACHE_FILE.exists()}")
             print(f"  Not-found GUIDs: {not_found_count}\n")
             return 0
         else:

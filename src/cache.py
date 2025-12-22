@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 # Cache file location
 CACHE_FILE = Path(__file__).parent.parent / ".cache" / "assets.json"
 
+# Global cache (loaded on first access)
+_CACHE = None
+_CACHE_MTIME = None  # Track file modification time
+
 
 def _ensure_cache_dir() -> None:
     """Ensure cache directory exists."""
@@ -44,11 +48,6 @@ def _save_cache(cache: dict) -> None:
             json.dump(cache, f, indent=2)
     except IOError as e:
         logger.error(f"Failed to save cache: {e}")
-
-
-# Global cache (loaded on first access)
-_CACHE = None
-_CACHE_MTIME = None  # Track file modification time
 
 
 def reload_cache() -> dict:
@@ -165,25 +164,6 @@ def set_cached_asset(
     # Save to disk
     _save_cache(cache)
     logger.debug(f"Cached asset data for GUID {guid}")
-
-
-def get_cache_stats() -> dict:
-    """
-    Get cache statistics.
-
-    Returns:
-        Dict with total_entries and not_found_count
-    """
-    cache = _get_cache()
-
-    not_found_count = sum(
-        1 for entry in cache.values() if entry.get("not_found", False)
-    )
-
-    return {
-        "total_entries": len(cache),
-        "not_found_count": not_found_count,
-    }
 
 
 def clear_cache() -> None:
