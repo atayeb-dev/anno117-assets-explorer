@@ -20,9 +20,6 @@ If my work made your day better, consider [backing](https://ko-fi.com/atayeb) it
 - ✅ **RDA Extraction** — Extract RDA archives using RdaConsole.exe
 - ✅ **Asset Mapping** — Generate name-to-GUID mappings (Python or JSON)
 - ✅ **Asset Unpacking** — Extract XML assets from game files
-- ✅ **Cache Management** — Clear, inspect, or reset cache
-- ✅ **Smart Config** — Configuration auto-reloads on file modification
-- ✅ **Custom Config** — Override defaults with partial merge support
 
 ## Installation
 
