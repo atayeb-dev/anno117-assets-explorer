@@ -147,10 +147,10 @@ class AssetExplorerUI:
         # Setup initialization links
         self._setup_init_link_callbacks()
 
-        # Auto-size window
+        # Auto-size window with minimum of 960x600
         self.root.update_idletasks()
-        width = self.root.winfo_reqwidth()
-        height = self.root.winfo_reqheight()
+        width = max(960, self.root.winfo_reqwidth())
+        height = max(600, self.root.winfo_reqheight())
         self.root.geometry(f"{width}x{height}")
 
     # ============================================================

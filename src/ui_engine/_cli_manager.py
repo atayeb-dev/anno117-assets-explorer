@@ -88,12 +88,13 @@ class CLIManager:
             messagebox.showerror("Error", f"Error during search: {e}")
             return None, []
 
-    def fetch_related_guids(self, guid: str) -> list[dict]:
+    def fetch_related_guids(self, guid: str, filter_regex: str = None) -> list[dict]:
         """
         Fetch related GUIDs for an asset (asset must already be found).
 
         Args:
             guid: The GUID to find related assets for
+            filter_regex: Optional regex filter for element_name/context
 
         Returns:
             List of related GUID dicts or empty list if error
@@ -111,6 +112,10 @@ class CLIManager:
                 "-ad",
                 str(self.assets_dir),
             ]
+
+            # Add filter if provided
+            if filter_regex:
+                cmd.extend(["-f", filter_regex])
 
             result = subprocess.run(
                 cmd,

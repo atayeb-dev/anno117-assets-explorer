@@ -56,53 +56,56 @@ class AssetMapperWidget:
 
     def _setup_ui(self) -> None:
         """Set up the asset mapper UI components."""
-        # Template file selector
-        ttk.Label(self.frame, text="Template file:", font=("Arial", 9)).pack(
-            anchor="w", pady=(5, 0)
+        # Template Selection Frame
+        template_frame = ttk.LabelFrame(
+            self.frame, text="Template Selection", padding=10
         )
+        template_frame.pack(fill="x", padx=5, pady=5)
 
-        self.asset_combo = ttk.Combobox(self.frame, state="readonly", width=30)
-        self.asset_combo.pack(fill="x", pady=5)
+        ttk.Label(template_frame, text="Template file:").pack(anchor="w", pady=(0, 5))
 
-        # Search/filter frame
-        search_frame = ttk.Frame(self.frame)
-        ttk.Label(search_frame, text="Search:", font=("Arial", 9)).pack(
-            side="left", padx=(0, 5)
-        )
-        self.asset_filter_entry = ttk.Entry(search_frame, width=20)
+        self.asset_combo = ttk.Combobox(template_frame, state="readonly", width=30)
+        self.asset_combo.pack(fill="x", pady=(0, 10))
+
+        # Search/filter section - horizontal layout
+        search_frame = ttk.Frame(template_frame)
+        search_frame.pack(fill="x", pady=(0, 5))
+
+        ttk.Label(search_frame, text="Filter:").pack(side="left", padx=(0, 5))
+        self.asset_filter_entry = ttk.Entry(search_frame)
         self.asset_filter_entry.pack(side="left", fill="x", expand=True)
         self.asset_filter_entry.bind("<KeyRelease>", lambda e: self._filter_assets())
 
-        search_frame.pack(fill="x", pady=(0, 5))
+        # Output Configuration Frame
+        config_frame = ttk.LabelFrame(
+            self.frame, text="Output Configuration", padding=10
+        )
+        config_frame.pack(fill="x", padx=5, pady=5)
 
-        # Output format selector
-        ttk.Label(self.frame, text="Output format:", font=("Arial", 9)).pack(
-            anchor="w", pady=(5, 0)
-        )
+        ttk.Label(config_frame, text="Output format:").pack(anchor="w", pady=(0, 5))
         self.format_combo = ttk.Combobox(
-            self.frame, values=["python", "json"], state="readonly", width=30
+            config_frame, values=["python", "json"], state="readonly", width=30
         )
-        self.format_combo.pack(fill="x", pady=5)
+        self.format_combo.pack(fill="x", pady=(0, 10))
         self.format_combo.current(0)
 
-        # CLI filter frame
-        cli_frame = ttk.Frame(self.frame)
-        ttk.Label(cli_frame, text="cli Filter:", font=("Arial", 9)).pack(
-            side="left", padx=(0, 5)
-        )
-        self.filter_entry = ttk.Entry(cli_frame)
-        self.filter_entry.pack(fill="x", expand=True)
+        # CLI Filter frame - horizontal layout
+        cli_frame = ttk.Frame(config_frame)
         cli_frame.pack(fill="x", pady=(0, 5))
 
-        # Run button
-        mapper_button_frame = ttk.Frame(self.frame)
-        mapper_button_frame.pack(fill="x", pady=10)
+        ttk.Label(cli_frame, text="cli Filter:").pack(side="left", padx=(0, 5))
+        self.filter_entry = ttk.Entry(cli_frame)
+        self.filter_entry.pack(side="left", fill="x", expand=True)
+
+        # Execution Frame
+        execution_frame = ttk.LabelFrame(self.frame, text="Execution", padding=10)
+        execution_frame.pack(fill="x", padx=5, pady=5)
 
         ttk.Button(
-            mapper_button_frame,
+            execution_frame,
             text="Run Mapper",
             command=self._run_mapper,
-        ).pack(side="left", padx=5)
+        ).pack(side="left", padx=5, pady=5)
 
     # ============================================================
     # ASSET MANAGEMENT

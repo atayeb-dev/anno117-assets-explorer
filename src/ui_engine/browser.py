@@ -51,6 +51,10 @@ class AssetBrowserWidget:
         self.assets_dir = assets_dir
         self.current_guid_var = current_guid_var
 
+        # Store current asset for filter refresh
+        self.current_asset_info = None
+        self.current_related_guids = None
+
         # Callbacks set by parent (ui.py)
         self.on_guid_requested = None  # (guid: str) -> None
         self.on_related_guid_clicked = None  # (guid: str) -> None
@@ -130,6 +134,16 @@ class AssetBrowserWidget:
         if self.on_related_guid_clicked:
             self.on_related_guid_clicked(guid)
 
+    def _apply_filter(self) -> None:
+        """Refresh the display with current filter."""
+        if self.current_asset_info and self.current_related_guids is not None:
+            # Re-display with current filter
+            self.display_asset_info(
+                self.current_asset_info["guid"],
+                self.current_asset_info,
+                self.current_related_guids,
+            )
+
     # ============================================================
     # DISPLAY METHODS (called by parent after CLI call)
     # ============================================================
@@ -187,64 +201,133 @@ class AssetBrowserWidget:
         if related_guids is None:
             related_guids = []
 
-        logger.info(f"Display: asset {guid} with {len(related_guids)} related")
+        # Store for filter refresh
+        self.current_asset_info = asset_info
+        self.current_related_guids = related_guids
+
+        # Apply filter if set (filter_text comes from parameter or empty)
+        filtered_guids = related_guids
+        filter_text = ""  # Default: no filter
+        if filter_text and related_guids:
+            import re
+
+            try:
+                pattern = re.compile(filter_text, re.IGNORECASE)
+                filtered_guids = [
+                    ref
+                    for ref in related_guids
+                    if pattern.search(ref["element_name"])
+                    or pattern.search(ref["context"])
+                ]
+            except re.error as e:
+                logger.warning(f"Invalid regex filter: {e}")
+                filtered_guids = related_guids
+
+        logger.info(
+            f"Display: asset {guid} with {len(filtered_guids)}/{len(related_guids)} related"
+        )
 
         # Clear previous content
         for widget in self.nav_info_frame.winfo_children():
             widget.destroy()
 
-        # Create scrollable container for all content
-        container_frame = ttk.Frame(self.nav_info_frame)
-        container_frame.pack(fill="both", expand=True)
-
-        # Create canvas with scrollbar
-        canvas = tk.Canvas(container_frame, highlightthickness=0, bg="white")
-        scrollbar = tk.Scrollbar(
-            container_frame, orient="vertical", command=canvas.yview, width=12
+        # ============================================================
+        # FIXED SECTION - Asset Details (no scroll)
+        # ============================================================
+        # Create a LabelFrame for asset info (matching Asset Browser style)
+        fixed_info_frame = ttk.LabelFrame(
+            self.nav_info_frame, text="Asset Info", padding=10
         )
-        # Use tk.Frame instead of ttk.Frame for better compatibility with Canvas
-        scrollable_frame = tk.Frame(canvas, bg="white")
+        fixed_info_frame.pack(fill="x", pady=(0, 10))
 
-        scrollable_frame.bind(
-            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # Enable mouse wheel scrolling
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-        # Asset details
         info_text = f"GUID: {asset_info['guid']}\nName: {asset_info['name']}\nTemplate: {asset_info['template']}\nFile: {asset_info['file']}"
         info_label = tk.Label(
-            scrollable_frame,
+            fixed_info_frame,
             text=info_text,
             font=("Arial", 9),
             justify="left",
-            bg="white",
+            anchor="w",
         )
-        info_label.pack(anchor="w", pady=(0, 10), padx=5)
+        info_label.pack(anchor="w", pady=0, padx=0, fill="x")
 
-        # Related GUIDs
+        # ============================================================
+        # FIXED SECTION - Related GUIDs Title (no scroll)
+        # ============================================================
+        related_title_text = None
         if related_guids:
-            logger.info(f"Display: {len(related_guids)} related GUIDs")
-            related_title = tk.Label(
-                scrollable_frame,
-                text=f"Related GUIDs ({len(related_guids)}):",
-                font=("Arial", 9, "bold"),
-                bg="white",
-            )
-            related_title.pack(anchor="w", pady=(5, 0), padx=5)
+            if filter_text and len(filtered_guids) < len(related_guids):
+                related_title_text = f"Related GUIDs ({len(filtered_guids)}/{len(related_guids)} filtered)"
+            else:
+                related_title_text = f"Related GUIDs ({len(related_guids)})"
 
-            for ref in related_guids:
+        # ============================================================
+        # SCROLLABLE SECTION - Related GUID Links
+        # ============================================================
+        if filtered_guids:
+            # Create a LabelFrame container for related links (matching Asset Browser style)
+            related_frame = ttk.LabelFrame(
+                self.nav_info_frame, text=related_title_text, padding=10
+            )
+            related_frame.pack(fill="both", expand=True, pady=(10, 0))
+
+            # Filter frame inside related_frame
+            filter_frame = tk.Frame(related_frame)
+            filter_frame.pack(anchor="w", fill="x", padx=0, pady=(0, 10))
+
+            ttk.Label(filter_frame, text="Filter:").pack(side="left", padx=(0, 5))
+
+            filter_entry_widget = ttk.Entry(filter_frame, width=20)
+            filter_entry_widget.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+            def refresh_with_filter():
+                new_filter = filter_entry_widget.get().strip()
+                # Re-display with new filter
+                self._display_asset_with_filter(
+                    guid, asset_info, related_guids, new_filter
+                )
+
+            ttk.Button(
+                filter_frame,
+                text="⟳ Refresh",
+                command=refresh_with_filter,
+            ).pack(side="left")
+
+            # Create scrollable container for related links only
+            scrollable_container = ttk.Frame(related_frame)
+            scrollable_container.pack(fill="both", expand=True)
+
+            # Create canvas with scrollbar
+            canvas = tk.Canvas(scrollable_container, highlightthickness=0, bg="white")
+            scrollbar = tk.Scrollbar(
+                scrollable_container, orient="vertical", command=canvas.yview, width=12
+            )
+            # Use tk.Frame instead of ttk.Frame for better compatibility with Canvas
+            scrollable_frame = tk.Frame(canvas, bg="white")
+
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+            )
+
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            # Enable mouse wheel scrolling
+            def _on_mousewheel(event):
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+            for idx, ref in enumerate(filtered_guids):
                 link_text = f"{ref['guid']} (from <{ref['element_name']}>)"
+
+                # Alternate background colors for better readability
+                bg_color = (
+                    "#e8f5e9" if idx % 2 == 0 else "white"
+                )  # Light green alternating
 
                 # Check if GUID was previously searched and not found
                 is_invalid = is_guid_not_found(ref["guid"])
@@ -256,9 +339,9 @@ class AssetBrowserWidget:
                         scrollable_frame,
                         text=link_text,
                         foreground="gray",
-                        font=("Arial", 9),
+                        font=("Courier", 9),
                         cursor="arrow",
-                        bg="white",
+                        bg=bg_color,
                     )
                 else:
                     # Active link (clickable)
@@ -266,15 +349,15 @@ class AssetBrowserWidget:
                         scrollable_frame,
                         text=link_text,
                         foreground="darkblue",
-                        font=("Arial", 9, "underline"),
+                        font=("Courier", 9, "underline"),
                         cursor="hand2",
-                        bg="white",
+                        bg=bg_color,
                     )
                     link.bind(
                         "<Button-1>", lambda e, g=ref["guid"]: self._navigate_to_guid(g)
                     )
 
-                link.pack(anchor="w", padx=25, pady=2)
+                link.pack(anchor="w", padx=25, pady=2, fill="x")
 
         # Force window resize to fit new content
         self.parent.update_idletasks()

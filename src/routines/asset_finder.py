@@ -281,6 +281,13 @@ def main(args: list[str] | None = None) -> int:
         help="Find related GUIDs referenced by this asset",
     )
     parser.add_argument(
+        "-f",
+        "--filter",
+        type=str,
+        default=None,
+        help="Regex filter for related GUIDs (matches element_name or context)",
+    )
+    parser.add_argument(
         "-j",
         "--json",
         action="store_true",
@@ -305,6 +312,19 @@ def main(args: list[str] | None = None) -> int:
 
                 if parsed.related:
                     related = find_related_guids(parsed.guid, parsed.assets_dir)
+
+                    # Apply filter if provided
+                    if parsed.filter:
+                        import re
+
+                        pattern = re.compile(parsed.filter, re.IGNORECASE)
+                        related = [
+                            ref
+                            for ref in related
+                            if pattern.search(ref["element_name"])
+                            or pattern.search(ref["context"])
+                        ]
+
                     output["related"] = related
                 else:
                     output["related"] = []
