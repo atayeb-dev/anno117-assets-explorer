@@ -19,6 +19,7 @@ import logging
 import re
 from pathlib import Path
 
+from ..config import reload_config_if_needed
 from ..utils import make_json_serializable
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,14 @@ class FilterManager:
     # ============================================================
 
     def get_config_keywords(self) -> list[str]:
-        """Get filter keywords from config."""
+        """
+        Get filter keywords from config.
+
+        Reloads config from disk if it has been modified externally.
+        """
+        # Ensure config is up-to-date with disk
+        reload_config_if_needed(self.config)
+
         return self.config.get("ui", {}).get("related_filter_keywords", [])
 
     def parse_keywords(self, keyword_string: str) -> list[str]:

@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG_FILE = "config.json"
 PARTIAL_MERGE_KEY = "partial"
 
+# For tracking config file modifications (like cache does)
+_CONFIG_MTIME = None
+
 
 # ============================================================
 # UTILITIES
@@ -136,3 +139,44 @@ def get_path(key: str, config: dict | None = None) -> Path:
         raise KeyError(f"Path '{key}' not found in configuration")
 
     return config["paths"][key]
+
+
+def reload_config_if_needed(config: dict) -> None:
+    """
+    Reload config from disk if the file has been modified.
+
+    Similar to cache reload logic - tracks file modification time.
+    Useful when config.json is modified externally or by other processes.
+
+    Args:
+        config: Configuration dictionary to reload if needed.
+    """
+    global _CONFIG_MTIME
+
+    config_path = Path.cwd() / DEFAULT_CONFIG_FILE
+    if not config_path.exists():
+        return
+
+    current_mtime = config_path.stat().st_mtime
+    if _CONFIG_MTIME is None or _CONFIG_MTIME != current_mtime:
+        # File is new or has changed, reload it
+        logger.debug("Config file modified, reloading from disk")
+        try:
+            with config_path.open("r", encoding="utf-8") as f:
+                new_config = json.load(f)
+
+            # Update the provided config dict (in-place)
+            config.clear()
+            config.update(new_config)
+
+            # Re-convert paths
+            paths = {}
+            for key, value in config.get("paths", {}).items():
+                paths[key] = Path.cwd() / value if isinstance(value, str) else Path(value)
+            config["paths"] = paths
+
+            _CONFIG_MTIME = current_mtime
+            logger.info(f"Config reloaded from {config_path}")
+        except Exception as e:
+            logger.error(f"Failed to reload config: {e}")
+
