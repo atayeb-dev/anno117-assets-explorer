@@ -15,8 +15,7 @@ If my work made your day better, consider [backing](https://ko-fi.com/atayeb) it
 
 ## Features
 
-- ✅ **GUID Lookup** — Search assets by GUID with smart caching (MTIME-based auto-reload)
-- ✅ **Related Assets** — Find templates that reference a GUID
+- ✅ **GUID Lookup** — Search assets by GUID
 - ✅ **RDA Extraction** — Extract RDA archives using RdaConsole.exe
 - ✅ **Asset Mapping** — Generate name-to-GUID mappings (Python or JSON)
 - ✅ **Asset Unpacking** — Extract XML assets from game files
