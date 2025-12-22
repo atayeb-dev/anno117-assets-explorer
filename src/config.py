@@ -205,7 +205,9 @@ def set_global_config(config: dict, config_path: str | Path | None = None) -> No
     """
     global _GLOBAL_CONFIG, _GLOBAL_CONFIG_PATH
     _GLOBAL_CONFIG = config
-    _GLOBAL_CONFIG_PATH = Path(config_path) if config_path else Path.cwd() / DEFAULT_CONFIG_FILE
+    _GLOBAL_CONFIG_PATH = (
+        Path(config_path) if config_path else Path.cwd() / DEFAULT_CONFIG_FILE
+    )
     logger.info(f"Global config set from: {_GLOBAL_CONFIG_PATH}")
 
 
