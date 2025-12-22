@@ -376,7 +376,7 @@ class AssetBrowserWidget:
     def _add_to_blacklist(self, element_name: str) -> None:
         """
         Add element_name to config blacklist.
-        
+
         Merges with existing keywords without overwriting.
         """
         self.filter_mgr.add_to_config(element_name)
