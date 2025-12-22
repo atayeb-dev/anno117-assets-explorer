@@ -1,8 +1,14 @@
 """
-Atayeb Assets Explorer - Main entry point.
+Atayeb Assets Explorer - Main entry point and dispatcher.
 
-Provides a dispatcher to launch different modules (CLI tools or UI) with their
-respective arguments. Supports both command-line tools and graphical interfaces.
+Routes execution to CLI modules or UI based on command-line arguments.
+Supports custom configuration files with partial merging.
+
+Architecture:
+- Entry point: Parses arguments and routes to CLI or UI
+- Config: Loaded via src.config.load_config() (handles merging)
+- CLI: Dynamic module loading from src.routines.*
+- UI: Launched via src.ui.main()
 """
 
 # ============================================================
@@ -11,17 +17,14 @@ respective arguments. Supports both command-line tools and graphical interfaces.
 
 import argparse
 import importlib
-import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any
 
 # ============================================================
-# CONFIGURATION
+# CONSTANTS
 # ============================================================
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 CLI_PREFIX = "src.routines."
@@ -29,72 +32,7 @@ UI_MODULE = "src.ui"
 CALLABLE_NAMES = ("main", "run", "cli", "ui")
 
 # ============================================================
-# CONFIG SETUP
-# ============================================================
-
-
-def _setup_custom_config(config_path: Path) -> None:
-    """
-    Setup custom config by creating a temporary config.json override.
-
-    If the custom config has 'partial: true', it will be merged with
-    the default config (custom values override, missing values inherit).
-
-    Args:
-        config_path: Path to custom config file.
-    """
-    if not config_path.exists():
-        raise FileNotFoundError(f"Custom config file not found: {config_path}")
-
-    # Load both configs
-    default_config_path = Path.cwd() / "config.json"
-    with open(default_config_path, "r", encoding="utf-8") as f:
-        default_config = json.load(f)
-
-    with open(config_path, "r", encoding="utf-8") as f:
-        custom_config = json.load(f)
-
-    # Merge if partial=true
-    if custom_config.get("partial", False):
-        logger.info(f"Merging partial config from {config_path} with default config")
-        merged_config = _deep_merge(default_config, custom_config)
-    else:
-        logger.info(f"Using custom config from {config_path}")
-        merged_config = custom_config
-
-    # Write merged config to default location
-    with open(default_config_path, "w", encoding="utf-8") as f:
-        json.dump(merged_config, f, indent=4)
-
-    logger.info(f"Config applied: {config_path}")
-
-
-def _deep_merge(base: dict, override: dict) -> dict:
-    """
-    Deep merge override dict into base dict.
-
-    Override values take precedence. Missing values inherit from base.
-
-    Args:
-        base: Base configuration dictionary.
-        override: Override configuration dictionary.
-
-    Returns:
-        Merged configuration dictionary.
-    """
-    result = base.copy()
-
-    for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = value
-
-    return result
-
-
-# ============================================================
-# DISPATCHER
+# MODULE DISPATCHER
 # ============================================================
 
 
@@ -143,42 +81,43 @@ def _invoke_module(module_name: str, module_args: list[str]) -> int | None:
 
 def _build_parser() -> argparse.ArgumentParser:
     """
-    Build and return the argument parser.
+    Build argument parser for the dispatcher.
 
     Returns:
         Configured ArgumentParser instance.
     """
     parser = argparse.ArgumentParser(
-        description="Atayeb Assets Explorer - Asset extraction and management utility"
+        description="Atayeb Assets Explorer - Asset extraction and management utility",
+        epilog="Examples: main.py --ui | main.py --cli asset_finder",
     )
     parser.add_argument(
         "-cfg",
         "--config",
         type=Path,
         default=None,
-        help="Custom config.json file (supports partial configs with 'partial: true')",
+        help="Custom config file (supports 'partial: true' for merging)",
     )
     parser.add_argument(
         "-c",
         "--cli",
         nargs=argparse.REMAINDER,
-        help="Run CLI module: --cli MODULE_NAME [ARGS...]",
+        help="Run CLI: --cli MODULE [ARGS...]",
     )
     parser.add_argument(
         "-u",
         "--ui",
         nargs=argparse.REMAINDER,
-        help="Launch UI mode: --ui [ARGS...]",
+        help="Launch UI: --ui [ARGS...]",
     )
     return parser
 
 
 def main(args: list[str] | None = None) -> int:
     """
-    Main entry point for the application dispatcher.
+    Main dispatcher entry point.
 
-    Routes command execution to either CLI modules or the UI based on
-    command-line arguments.
+    Parses command-line arguments and routes execution to CLI modules or UI.
+    Handles custom config file loading via src.config.load_config().
 
     Args:
         args: Command-line arguments (defaults to sys.argv[1:]).
@@ -186,16 +125,27 @@ def main(args: list[str] | None = None) -> int:
     Returns:
         Exit code (0 on success, non-zero on failure).
     """
+    # Configure logging
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
     parser = _build_parser()
     parsed = parser.parse_args(args)
 
-    # Suppress logging INFO if --json flag is present (for clean output), but keep WARNING and ERROR
+    # Suppress INFO logging if --json flag (for clean output)
     if "--json" in (args or sys.argv[1:]):
         logger.setLevel(logging.WARNING)
 
-    # Handle custom config file if provided
+    # Handle custom config (loads via src.config which handles merging)
     if parsed.config:
-        _setup_custom_config(parsed.config)
+        from src.config import load_config
+
+        try:
+            # This will handle partial merging automatically
+            load_config(parsed.config)
+            logger.info(f"Custom config loaded: {parsed.config}")
+        except Exception as e:
+            logger.error(f"Failed to load custom config: {e}")
+            return 1
 
     try:
         if parsed.cli:
@@ -206,12 +156,12 @@ def main(args: list[str] | None = None) -> int:
             module_args = parsed.cli[1:]
             full_module_name = f"{CLI_PREFIX}{module_name}"
 
-            logger.info(f"Launching CLI module: {module_name}")
+            logger.info(f"Launching CLI: {module_name}")
             result = _invoke_module(full_module_name, module_args)
             return result or 0
 
         elif parsed.ui is not None:
-            logger.info("Launching UI module")
+            logger.info("Launching UI")
             result = _invoke_module(UI_MODULE, parsed.ui)
             return result or 0
 
@@ -220,7 +170,7 @@ def main(args: list[str] | None = None) -> int:
             return 1
 
     except ModuleNotFoundError as e:
-        logger.error(f"Failed to load module: {e}")
+        logger.error(f"Module not found: {e}")
         return 1
     except Exception as e:
         logger.error(f"Error: {e}")

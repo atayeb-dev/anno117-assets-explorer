@@ -2,33 +2,60 @@
 Asset Browser Widget - Right panel of the Asset Explorer UI.
 
 Pure UI component - No direct CLI calls.
-Communicates with main UI via callbacks:
-- on_guid_requested: User typed/searched for a GUID
-- on_related_guid_clicked: User clicked a related GUID link
-- on_back_clicked: User clicked back button
+Coordinates with main UI via callbacks for GUID navigation.
 
-CONFIG SHARING:
-The config instance is loaded once at app startup (in ui.py::main) and passed
-to this widget. All operations (save/load/add) work with the in-memory config:
-- SAVE: Updates RAM config AND persists to config.json
-- ADD: Merges with existing in RAM config AND persists to config.json
-- LOAD: Reads from in-memory config (never re-reads from file)
+Architecture:
+- Display asset info and related GUIDs
+- Blacklist filter with save/load/add operations
+- Related GUID navigation with hover effects
+- Handles "not found" GUIDs (disabled navigation)
 
-This ensures all UI components share the same config state.
+Config sharing:
+- Config loaded once at app startup (in ui.py::main)
+- Passed to this widget and FilterManager
+- All save/load/add operations persist to config.json
 """
+
+# ============================================================
+# IMPORTS
+# ============================================================
 
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
 from ..cache import is_guid_not_found
-from ..utils import setup_logging, make_json_serializable
+from ..utils import setup_logging
+from ._filter_manager import FilterManager, FilterApplier
 
 logger = setup_logging()
 
+# ============================================================
+# CONSTANTS
+# ============================================================
+
+DEFAULT_FONT = ("Arial", 9)
+COURIER_FONT = ("Courier", 9)
+SEPARATOR_COLOR = "#eeeeee"
+HOVER_COLOR = "#f5f5f5"
+LINK_COLOR = "darkblue"
+
+
+# ============================================================
+# ASSET BROWSER WIDGET
+# ============================================================
+
 
 class AssetBrowserWidget:
-    """Pure UI widget for Asset Browser - GUID search and navigation."""
+    """
+    UI widget for browsing and filtering related asset GUIDs.
+
+    Features:
+    - GUID search and navigation
+    - Related GUIDs list with links
+    - Blacklist filter with regex pattern matching
+    - Save/load/add filter keywords from config
+    """
 
     def __init__(
         self, parent, assets_dir: Path, current_guid_var: tk.StringVar, config: dict
@@ -40,47 +67,59 @@ class AssetBrowserWidget:
             parent: Parent tkinter widget.
             assets_dir: Path to assets directory.
             current_guid_var: StringVar for current GUID.
-            config: Shared config dict instance (loaded once at app startup).
+            config: Shared config dict (loaded once at app startup).
         """
         self.parent = parent
         self.assets_dir = assets_dir
         self.current_guid_var = current_guid_var
-        self.config = config  # Shared config instance
+        self.config = config
 
-        # Store current asset for filter refresh
+        # Initialize filter manager
+        self.filter_mgr = FilterManager(config)
+
+        # State tracking
         self.current_asset_info = None
         self.current_related_guids = None
-        self.current_filter_text = ""  # Regex pattern (complete, including config)
-        self.current_filter_input = ""  # Raw user input (keywords added by user only)
-        self.filter_has_been_edited = False  # Track if user has edited the filter
+        self.current_filter_text = ""  # Active regex pattern
+        self.current_filter_input = ""  # User-added keywords only
 
-        # Callbacks set by parent (ui.py)
+        # Callback hooks
         self.on_guid_requested = None
         self.on_related_guid_clicked = None
         self.on_back_clicked = None
+
+        # UI references
+        self.filter_entry = None
 
         # Main frame
         self.frame = ttk.LabelFrame(parent, text="Asset Browser", padding=10)
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Set up the asset browser UI components."""
-        ttk.Label(self.frame, text="Search by GUID:", font=("Arial", 9)).pack(
+        """Set up asset browser UI components."""
+        # ============================================================
+        # SEARCH SECTION
+        # ============================================================
+
+        ttk.Label(self.frame, text="Search by GUID:", font=DEFAULT_FONT).pack(
             anchor="w", pady=(5, 0)
         )
 
-        guid_search_frame = ttk.Frame(self.frame)
-        guid_search_frame.pack(fill="x", pady=5)
+        search_frame = ttk.Frame(self.frame)
+        search_frame.pack(fill="x", pady=5)
 
-        self.guid_entry = ttk.Entry(guid_search_frame, width=30)
+        self.guid_entry = ttk.Entry(search_frame, width=30)
         self.guid_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
         self.guid_entry.bind("<Return>", lambda e: self._on_search_guid())
 
-        ttk.Button(guid_search_frame, text="Search", command=self._on_search_guid).pack(
+        ttk.Button(search_frame, text="Search", command=self._on_search_guid).pack(
             side="left"
         )
 
-        # Back button on a second line, right-aligned
+        # ============================================================
+        # BACK BUTTON
+        # ============================================================
+
         back_frame = ttk.Frame(self.frame)
         back_frame.pack(fill="x", pady=(0, 5))
 
@@ -88,18 +127,25 @@ class AssetBrowserWidget:
             back_frame,
             text="← Back",
             foreground="gray",
-            font=("Arial", 9, "underline"),
+            font=DEFAULT_FONT + ("underline",),
             cursor="arrow",
         )
-        self.back_link.pack(side="right", padx=(0, 0))
+        self.back_link.pack(side="right")
         self.back_link.bind("<Button-1>", lambda e: self._on_back_link_clicked())
 
-        # Info display area
+        # ============================================================
+        # CONTENT AREA
+        # ============================================================
+
         self.nav_info_frame = ttk.Frame(self.frame)
         self.nav_info_frame.pack(fill="both", expand=True, pady=10)
 
+    # ============================================================
+    # EVENT HANDLERS
+    # ============================================================
+
     def _on_search_guid(self) -> None:
-        """Handle GUID search."""
+        """Handle GUID search button/Enter key."""
         guid = self.guid_entry.get().strip()
         if guid:
             self.current_guid_var.set(guid)
@@ -111,472 +157,325 @@ class AssetBrowserWidget:
         if self.on_back_clicked:
             self.on_back_clicked()
 
-    def _navigate_to_guid(self, guid: str) -> None:
-        """Navigate to a GUID by clicking a related GUID link."""
+    def _on_guid_link_clicked(self, guid: str) -> None:
+        """Handle related GUID link click."""
         if self.on_related_guid_clicked:
             self.on_related_guid_clicked(guid)
 
+    # ============================================================
+    # DISPLAY METHODS
+    # ============================================================
+
     def display_not_found(self, guid: str) -> None:
-        """Display not-found message."""
+        """Display GUID not found error."""
         logger.info(f"Display: GUID {guid} not found")
 
-        for widget in self.nav_info_frame.winfo_children():
-            widget.destroy()
+        self._clear_content()
 
-        content_frame = ttk.Frame(self.nav_info_frame)
-        content_frame.pack(fill="both", expand=True)
+        frame = ttk.Frame(self.nav_info_frame)
+        frame.pack(fill="both", expand=True)
 
-        error_label = ttk.Label(
-            content_frame,
+        ttk.Label(
+            frame,
             text=f"✗ GUID {guid} not found",
-            font=("Arial", 10),
+            font=DEFAULT_FONT,
             foreground="red",
-        )
-        error_label.pack(anchor="w", pady=10)
+        ).pack(anchor="w", pady=10)
 
-        hint_label = ttk.Label(
-            content_frame,
+        ttk.Label(
+            frame,
             text="Click 'Back' to return to the previous asset",
-            font=("Arial", 9),
+            font=DEFAULT_FONT,
             foreground="gray",
-        )
-        hint_label.pack(anchor="w")
+        ).pack(anchor="w")
 
         self.parent.update_idletasks()
 
     def display_asset_info(
         self, guid: str, asset_info: dict, related_guids: list[dict] = None
     ) -> None:
-        """Display asset information and related GUIDs."""
+        """
+        Display asset info and related GUIDs.
+
+        Applies current blacklist filter to related GUIDs list.
+
+        Args:
+            guid: GUID being displayed.
+            asset_info: Asset info dict.
+            related_guids: List of related GUID dicts.
+        """
         if related_guids is None:
             related_guids = []
 
-        # Store for filter refresh
+        # Store state
         self.current_asset_info = asset_info
         self.current_related_guids = related_guids
         self.current_filter_text = ""
-        # current_filter_input stores ONLY user-added keywords, starts empty
-        # It's NOT reset when displaying new asset (preserves user's additions)
 
         logger.info(
-            f"Display: asset {guid} with {len(related_guids)}/{len(related_guids)} related"
+            f"Display: asset {guid} with {len(related_guids)} related GUIDs"
         )
 
-        # Clear previous content
-        for widget in self.nav_info_frame.winfo_children():
-            widget.destroy()
+        # Render UI
+        self._clear_content()
+        self._render_asset_info(asset_info)
+        self._render_related_guids(related_guids)
 
-        # Asset Info section
-        self._create_asset_info_section(asset_info)
-
-        # Related GUIDs section
-        self._create_related_guids_section(related_guids)
-
-        # Apply filter from blacklist if it exists
+        # Apply filter if keywords exist
         if self.current_filter_input.strip():
-            regex = self._build_complete_regex()
+            regex = self.filter_mgr.build_regex(
+                self.filter_mgr.get_config_keywords(),
+                self.filter_mgr.parse_keywords(self.current_filter_input),
+            )
             self._apply_filter(regex)
 
         self.parent.update_idletasks()
 
-    def _create_asset_info_section(self, asset_info: dict) -> None:
-        """Create the asset info display section."""
+    # ============================================================
+    # RENDERING METHODS
+    # ============================================================
+
+    def _clear_content(self) -> None:
+        """Clear content area."""
+        for widget in self.nav_info_frame.winfo_children():
+            widget.destroy()
+
+    def _render_asset_info(self, asset_info: dict) -> None:
+        """Render asset info section."""
         frame = ttk.LabelFrame(self.nav_info_frame, text="Asset Info", padding=10)
         frame.pack(fill="x", pady=(0, 10))
 
-        info_text = f"GUID: {asset_info['guid']}\nName: {asset_info['name']}\nTemplate: {asset_info['template']}\nFile: {asset_info['file']}"
-        label = tk.Label(
-            frame, text=info_text, font=("Arial", 9), justify="left", anchor="w"
+        text = (
+            f"GUID: {asset_info['guid']}\n"
+            f"Name: {asset_info['name']}\n"
+            f"Template: {asset_info['template']}\n"
+            f"File: {asset_info['file']}"
         )
+        label = tk.Label(frame, text=text, font=DEFAULT_FONT, justify="left", anchor="w")
         label.pack(anchor="w", fill="x")
 
-    def _create_related_guids_section(self, related_guids: list[dict]) -> None:
-        """Create the related GUIDs section with filter."""
+    def _render_related_guids(self, related_guids: list[dict]) -> None:
+        """Render related GUIDs section with filter."""
         title = f"Related GUIDs ({len(related_guids)})"
         frame = ttk.LabelFrame(self.nav_info_frame, text=title, padding=10)
         frame.pack(fill="both", expand=True, pady=(10, 0))
 
-        # Filter section
-        self._create_filter_frame(frame, related_guids)
+        self._render_filter_controls(frame)
+        self._render_related_list(frame, related_guids)
 
-        # List section - handles both empty and non-empty cases
-        self._create_related_list(frame, related_guids)
+    def _render_filter_controls(self, parent: tk.Widget) -> None:
+        """Render filter control buttons and input."""
+        frame = tk.Frame(parent)
+        frame.pack(anchor="w", fill="x", pady=(0, 10))
 
-    def _create_filter_frame(
-        self, parent: tk.Widget, related_guids: list[dict]
-    ) -> None:
-        """Create the filter input section."""
-        filter_frame = tk.Frame(parent)
-        filter_frame.pack(anchor="w", fill="x", padx=0, pady=(0, 10))
+        ttk.Label(frame, text="Blacklist keywords:").pack(side="left", padx=(0, 5))
 
-        ttk.Label(filter_frame, text="Blacklist keywords:").pack(
-            side="left", padx=(0, 5)
+        # Display text (config + user keywords merged)
+        config_kw = self.filter_mgr.get_config_keywords()
+        user_kw = self.filter_mgr.parse_keywords(self.current_filter_input)
+        display_text = self.filter_mgr.format_keywords(
+            self.filter_mgr.merge_keywords(config_kw, user_kw)
         )
 
-        # Display all keywords (config + user)
-        config_keywords = self.config.get("ui", {}).get("related_filter_keywords", [])
-        user_keywords = (
-            self.current_filter_input.split(",")
-            if self.current_filter_input.strip()
-            else []
-        )
-        user_keywords = [k.strip() for k in user_keywords if k.strip()]
-
-        all_keywords = config_keywords + user_keywords
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_keywords = []
-        for k in all_keywords:
-            if k not in seen:
-                unique_keywords.append(k)
-                seen.add(k)
-        display_text = ", ".join(unique_keywords)
-
-        self.filter_entry = ttk.Entry(filter_frame, width=40)
+        self.filter_entry = ttk.Entry(frame, width=40)
         self.filter_entry.insert(0, display_text)
         self.filter_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
 
-        def on_refresh():
-            # Refresh just re-applies the filter with config+user keywords
-            # Does NOT change what's stored or displayed
-            regex = self._build_complete_regex()
-            self._apply_filter(regex)
-
-        ttk.Button(filter_frame, text="⟳ Refresh", command=on_refresh).pack(side="left")
-
-        def on_save():
-            # Save all displayed keywords
-            display_text = self.filter_entry.get().strip()
-            display_keywords = [k.strip() for k in display_text.split(",") if k.strip()]
-            self.current_filter_input = ", ".join(display_keywords)
-            self._save_filter_to_config(", ".join(display_keywords))
-
-        def on_load():
-            # Load config keywords and refresh display
-            config_keywords = self.config.get("ui", {}).get(
-                "related_filter_keywords", []
-            )
-            user_keywords = [
-                k.strip() for k in self.current_filter_input.split(",") if k.strip()
-            ]
-            all_keywords = config_keywords + user_keywords
-            seen = set()
-            unique_keywords = []
-            for k in all_keywords:
-                if k not in seen:
-                    unique_keywords.append(k)
-                    seen.add(k)
-            display_text = ", ".join(unique_keywords)
-            self.filter_entry.delete(0, tk.END)
-            self.filter_entry.insert(0, display_text)
-            regex = self._build_complete_regex()
-            self._apply_filter(regex)
-
-        def on_add():
-            # Add all displayed keywords to config
-            display_text = self.filter_entry.get().strip()
-            display_keywords = [k.strip() for k in display_text.split(",") if k.strip()]
-            self.current_filter_input = ", ".join(display_keywords)
-            self._add_filter_to_config(", ".join(display_keywords))
-
-        ttk.Button(filter_frame, text="💾", width=2, command=on_save).pack(
+        # Buttons
+        ttk.Button(frame, text="⟳ Refresh", width=10, command=self._filter_refresh).pack(
+            side="left"
+        )
+        ttk.Button(frame, text="💾", width=2, command=self._filter_save).pack(
             side="left", padx=(2, 0)
         )
-        ttk.Button(filter_frame, text="📂", width=2, command=on_load).pack(
+        ttk.Button(frame, text="📂", width=2, command=self._filter_load).pack(
             side="left", padx=(2, 0)
         )
-        ttk.Button(filter_frame, text="➕", width=2, command=on_add).pack(
+        ttk.Button(frame, text="➕", width=2, command=self._filter_add).pack(
             side="left", padx=(2, 0)
         )
 
-    def _create_related_list(
+    def _render_related_list(
         self, parent: tk.Widget, related_guids: list[dict]
     ) -> None:
-        """Create the scrollable list of related GUIDs."""
-        import re
+        """Render scrollable list of related GUIDs."""
+        # Apply filter
+        filtered = FilterApplier.apply(related_guids, self.current_filter_text)
 
-        # Apply current filter (blacklist - exclude matching keywords)
-        filtered = related_guids
-        if self.current_filter_text:
-            try:
-                pattern = re.compile(self.current_filter_text, re.IGNORECASE)
-                filtered = [
-                    ref
-                    for ref in related_guids
-                    if not (
-                        pattern.search(ref.get("element_name", ""))
-                        or pattern.search(ref.get("context", ""))
-                    )
-                ]
-            except re.error:
-                filtered = related_guids
-
-        # Check if we have results after filtering
+        # Show empty state or list
         if not filtered:
-            # Determine why there are no results
-            if related_guids and self.current_filter_text:
-                # The asset had related GUIDs, but the filter excluded all of them
-                message_text = "No results match the current filter.\nTry adjusting or clearing the blacklist."
-            else:
-                # The asset has no related GUIDs at all
-                message_text = "No related GUIDs found."
-
-            tip_label = tk.Label(
-                parent,
-                text=message_text,
-                font=("Arial", 10),
-                foreground="gray",
-                bg="white",
-                justify="center",
-                pady=20,
-                padx=10,
-            )
-            tip_label.pack(anchor="center", expand=True, fill="both")
+            self._render_empty_list(parent, bool(related_guids), bool(self.current_filter_text))
         else:
-            # Scrollable container for related GUIDs - table-like appearance
-            container = ttk.Frame(parent)
-            container.pack(fill="both", expand=True)
+            self._render_guid_list(parent, filtered)
 
-            canvas = tk.Canvas(
-                container,
-                highlightthickness=1,
-                highlightbackground="#cccccc",
-                bg="white",
-            )
-            scrollbar = tk.Scrollbar(
-                container, orient="vertical", command=canvas.yview, width=12
-            )
-            scrollable_frame = tk.Frame(canvas, bg="white")
+    def _render_empty_list(self, parent: tk.Widget, has_guids: bool, has_filter: bool) -> None:
+        """Render empty list message."""
+        if has_guids and has_filter:
+            msg = "No results match the current filter.\nTry adjusting or clearing the blacklist."
+        else:
+            msg = "No related GUIDs found."
 
-            # Add related GUID links with table-like row styling
-            for idx, ref in enumerate(filtered):
-                guid = ref.get("guid", "???")
-                element = ref.get("element_name", "???")
-                context = ref.get("context", "???")
-                link_text = f"{guid} (from <{element}> in {context})"
+        label = tk.Label(
+            parent,
+            text=msg,
+            font=DEFAULT_FONT,
+            foreground="gray",
+            bg="white",
+            justify="center",
+            pady=20,
+        )
+        label.pack(anchor="center", expand=True, fill="both")
 
-                is_not_found = is_guid_not_found(guid)
+    def _render_guid_list(self, parent: tk.Widget, filtered_guids: list[dict]) -> None:
+        """Render scrollable list of GUID links."""
+        container = ttk.Frame(parent)
+        container.pack(fill="both", expand=True)
 
-                # Create row frame with border separator
-                row_frame = tk.Frame(scrollable_frame, bg="white", height=25)
-                row_frame.pack(anchor="w", fill="x", padx=0, pady=0)
+        # Canvas with scrollbar
+        canvas = tk.Canvas(
+            container,
+            highlightthickness=1,
+            highlightbackground="#cccccc",
+            bg="white",
+        )
+        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview, width=12)
+        scroll_frame = tk.Frame(canvas, bg="white")
 
-                # Add top border separator (except for first row)
-                if idx > 0:
-                    separator = tk.Frame(row_frame, bg="#eeeeee", height=1)
-                    separator.pack(anchor="w", fill="x", padx=0, pady=0)
+        # Render GUID links
+        for idx, ref in enumerate(filtered_guids):
+            if idx > 0:
+                # Separator between rows
+                tk.Frame(scroll_frame, bg=SEPARATOR_COLOR, height=1).pack(
+                    anchor="w", fill="x", padx=0, pady=0
+                )
 
-                if is_not_found:
-                    link = tk.Label(
-                        row_frame,
-                        text=link_text,
-                        foreground="gray",
-                        font=("Courier", 9),
-                        cursor="hand2",
-                        bg="white",
-                        justify="left",
-                        anchor="w",
-                        wraplength=400,
-                    )
-                    # Add element_name to filter on click
-                    link.bind(
-                        "<Button-1>", lambda e, el=element: self._add_to_filter(el)
-                    )
-                else:
-                    link = tk.Label(
-                        row_frame,
-                        text=link_text,
-                        foreground="darkblue",
-                        font=("Courier", 9, "underline"),
-                        cursor="hand2",
-                        bg="white",
-                        justify="left",
-                        anchor="w",
-                        wraplength=400,
-                    )
-                    link.bind("<Button-1>", lambda e, g=guid: self._navigate_to_guid(g))
+            self._render_guid_link(scroll_frame, ref)
 
-                # Hover effect
-                def on_enter(e, label=link):
-                    label.config(bg="#f5f5f5")
+        # Attach canvas
+        scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
 
-                def on_leave(e, label=link):
-                    label.config(bg="white")
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
-                link.bind("<Enter>", on_enter)
-                link.bind("<Leave>", on_leave)
+        # Mouse wheel scroll
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
-                link.pack(anchor="w", fill="x", padx=8, pady=5, expand=False)
+    def _render_guid_link(self, parent: tk.Widget, guid_ref: dict) -> None:
+        """Render a single GUID link with hover effects."""
+        guid = guid_ref.get("guid", "???")
+        element = guid_ref.get("element_name", "???")
+        context = guid_ref.get("context", "???")
+        text = f"{guid} (from <{element}> in {context})"
 
-            # Attach scrollable_frame to canvas
-            scrollable_frame.bind(
-                "<Configure>",
-                lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
-            )
+        is_not_found = is_guid_not_found(guid)
 
-            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-            canvas.configure(yscrollcommand=scrollbar.set)
+        label = tk.Label(
+            parent,
+            text=text,
+            font=COURIER_FONT,
+            fg="gray" if is_not_found else LINK_COLOR,
+            cursor="hand2" if not is_not_found else "arrow",
+            bg="white",
+            justify="left",
+            anchor="w",
+            wraplength=400,
+        )
 
-            canvas.pack(side="left", fill="both", expand=True)
-            scrollbar.pack(side="right", fill="y")
+        # Click handler
+        if is_not_found:
+            label.bind("<Button-1>", lambda e, el=element: self._add_to_filter(el))
+        else:
+            label.bind("<Button-1>", lambda e, g=guid: self._on_guid_link_clicked(g))
 
-            # Mouse wheel scroll
-            def on_scroll(event):
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        # Hover effects
+        label.bind("<Enter>", lambda e: label.config(bg=HOVER_COLOR))
+        label.bind("<Leave>", lambda e: label.config(bg="white"))
 
-            canvas.bind_all("<MouseWheel>", on_scroll)
+        if not is_not_found:
+            label.config(underline=True)
 
-    def _keywords_to_regex(self, keywords_str: str) -> str:
-        """Convert comma-separated keywords to regex blacklist pattern."""
-        if not keywords_str.strip():
-            return ""
+        label.pack(anchor="w", fill="x", padx=8, pady=5)
 
-        keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
-        if not keywords:
-            return ""
+    # ============================================================
+    # FILTER OPERATIONS
+    # ============================================================
 
-        import re
+    def _filter_refresh(self) -> None:
+        """Refresh filter (re-apply without changing storage)."""
+        regex = self.filter_mgr.build_regex(
+            self.filter_mgr.get_config_keywords(),
+            self.filter_mgr.parse_keywords(self.current_filter_input),
+        )
+        self._apply_filter(regex)
 
-        escaped = [re.escape(k) for k in keywords]
-        return "|".join(escaped)
+    def _filter_save(self) -> None:
+        """Save displayed keywords to config."""
+        text = self.filter_entry.get().strip()
+        self.current_filter_input = text
+        self.filter_mgr.save_to_config(text)
 
-    def _build_complete_regex(self) -> str:
-        """Build regex combining both config keywords and user keywords."""
-        config_keywords = self.config.get("ui", {}).get("related_filter_keywords", [])
-        user_keywords = [
-            k.strip() for k in self.current_filter_input.split(",") if k.strip()
-        ]
+    def _filter_load(self) -> None:
+        """Reload config keywords and update display."""
+        config_kw = self.filter_mgr.get_config_keywords()
+        user_kw = self.filter_mgr.parse_keywords(self.current_filter_input)
+        display_text = self.filter_mgr.format_keywords(
+            self.filter_mgr.merge_keywords(config_kw, user_kw)
+        )
+        self.filter_entry.delete(0, tk.END)
+        self.filter_entry.insert(0, display_text)
 
-        # Combine all keywords
-        all_keywords = config_keywords + user_keywords
+        regex = self.filter_mgr.build_regex(config_kw, user_kw)
+        self._apply_filter(regex)
 
-        # Remove duplicates
-        seen = set()
-        unique_keywords = []
-        for k in all_keywords:
-            if k not in seen:
-                unique_keywords.append(k)
-                seen.add(k)
-
-        if not unique_keywords:
-            return ""
-
-        import re
-
-        escaped = [re.escape(k) for k in unique_keywords]
-        return "|".join(escaped)
+    def _filter_add(self) -> None:
+        """Add displayed keywords to config."""
+        text = self.filter_entry.get().strip()
+        self.current_filter_input = text
+        self.filter_mgr.add_to_config(text)
 
     def _add_to_filter(self, element_name: str) -> None:
-        """Add an element_name to the blacklist filter."""
-        # Get current filter keywords
-        current = self.current_filter_input.strip()
-
-        # Parse current keywords
-        keywords = [k.strip() for k in current.split(",") if k.strip()]
-
-        # Add new element if not already present
+        """Add element_name to blacklist filter."""
+        keywords = self.filter_mgr.parse_keywords(self.current_filter_input)
         if element_name not in keywords:
             keywords.append(element_name)
 
-        # Update filter input
-        new_filter = ", ".join(keywords)
-        self.current_filter_input = new_filter
-        self.filter_has_been_edited = True
+        self.current_filter_input = self.filter_mgr.format_keywords(keywords)
 
-        # Convert to regex and apply (includes both config and user keywords)
-        regex = self._build_complete_regex()
+        regex = self.filter_mgr.build_regex(
+            self.filter_mgr.get_config_keywords(),
+            keywords,
+        )
         self._apply_filter(regex)
 
-        logger.info(f"Added '{element_name}' to blacklist filter")
+        logger.info(f"Added '{element_name}' to blacklist")
 
     def _apply_filter(self, regex_pattern: str) -> None:
-        """Re-display with new filter applied."""
+        """Re-render with new filter applied."""
         self.current_filter_text = regex_pattern
 
-        if not self.current_asset_info or self.current_related_guids is None:
+        if not self.current_asset_info or not self.current_related_guids:
             return
 
-        # Clear and redraw
-        for widget in self.nav_info_frame.winfo_children():
-            widget.destroy()
-
-        self._create_asset_info_section(self.current_asset_info)
-        self._create_related_guids_section(self.current_related_guids)
+        # Re-render
+        self._clear_content()
+        self._render_asset_info(self.current_asset_info)
+        self._render_related_guids(self.current_related_guids)
 
         self.parent.update_idletasks()
 
-    def _save_filter_to_config(self, keywords: str) -> None:
-        """Save filter keywords to config (RAM and file)."""
-        try:
-            import json
-            from pathlib import Path
-
-            # Update in-memory config
-            if "ui" not in self.config:
-                self.config["ui"] = {}
-
-            keyword_list = [k.strip() for k in keywords.split(",") if k.strip()]
-            self.config["ui"]["related_filter_keywords"] = keyword_list
-
-            # Persist to file (convert Path objects to strings)
-            config_path = Path("config.json")
-            serializable_config = make_json_serializable(self.config)
-            with open(config_path, "w") as f:
-                json.dump(serializable_config, f, indent=4)
-
-            logger.info(f"Saved filter keywords to config: {keyword_list}")
-        except Exception as e:
-            logger.error(f"Failed to save filter config: {e}")
-
-    def _load_filter_from_config(self) -> str:
-        """Load filter keywords from in-memory config."""
-        try:
-            keywords = self.config.get("ui", {}).get("related_filter_keywords", [])
-            return ", ".join(keywords)
-        except Exception as e:
-            logger.error(f"Failed to load filter config: {e}")
-            return ""
-
-    def _add_filter_to_config(self, keywords: str) -> None:
-        """Add filter keywords to in-memory config without overwriting existing ones."""
-        try:
-            import json
-            from pathlib import Path
-
-            # Initialize ui section if needed
-            if "ui" not in self.config:
-                self.config["ui"] = {}
-
-            # Get existing keywords from in-memory config
-            existing_keywords = self.config["ui"].get("related_filter_keywords", [])
-
-            # Parse new keywords
-            new_keywords = [k.strip() for k in keywords.split(",") if k.strip()]
-
-            # Add new keywords without duplicates
-            for keyword in new_keywords:
-                if keyword not in existing_keywords:
-                    existing_keywords.append(keyword)
-
-            # Update in-memory config
-            self.config["ui"]["related_filter_keywords"] = existing_keywords
-
-            # Persist to file (convert Path objects to strings)
-            config_path = Path("config.json")
-            serializable_config = make_json_serializable(self.config)
-            with open(config_path, "w") as f:
-                json.dump(serializable_config, f, indent=4)
-
-            logger.info(f"Added keywords to config: {new_keywords}")
-            # Update the filter display to reflect the new config
-            self._update_filter_display()
-        except Exception as e:
-            logger.error(f"Failed to add filter to config: {e}")
+    # ============================================================
+    # LAYOUT
+    # ============================================================
 
     def set_back_button_enabled(self, enabled: bool) -> None:
         """Enable/disable the back button."""
         if enabled:
-            self.back_link.config(foreground="darkblue", cursor="hand2")
+            self.back_link.config(foreground=LINK_COLOR, cursor="hand2")
         else:
             self.back_link.config(foreground="gray", cursor="arrow")
 
