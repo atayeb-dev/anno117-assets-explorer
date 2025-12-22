@@ -8,10 +8,12 @@ If my work made your day better, consider [backing](https://ko-fi.com/atayeb) it
 
 ## Features
 
-- **GUID Lookup** — Search for assets by GUID with instant cached results
+- **GUID Lookup** — Search for assets by GUID with cached results
 - **Asset Browser** — Navigate related assets through template references
-- **Smart Cache** — Caches found/not-found GUIDs to avoid redundant searches
-- **CLI & GUI** — Both interfaces with shared caching
+- **Blacklist Filter** — Filter out noise with config-based keyword blacklisting
+- **Smart Cache** — Auto-reload when cache file changes (MTIME-based detection)
+- **Smart Config** — Auto-reload when config changes (like cache)
+- **CLI & GUI** — Both interfaces with shared caching and config
 - **Asset Management** — Extract RDA archives, unpack assets, generate mappings
 
 ## Requirements
@@ -38,7 +40,10 @@ cd atayeb-assets-explorer
 python main.py --ui
 ```
 
-Search for assets by GUID. The app caches results automatically.
+1. Search for assets by GUID
+2. Browse related assets by clicking links
+3. Blacklist keywords by clicking disabled (gray) links
+4. Edit `config.json` to add/remove keywords from blacklist
 
 ### CLI Mode
 
@@ -106,7 +111,7 @@ python main.py --cli assets_mapper [OPTIONS]
 
 ## Configuration
 
-Edit `config.json` to customize paths:
+Edit `config.json` to customize paths and blacklist keywords:
 
 ```json
 {
@@ -117,40 +122,28 @@ Edit `config.json` to customize paths:
         "assets_xml": "unpacked/data/base/config/export/assets.xml",
         "assets_unpack_dir": "unpacked/assets",
         "gen_dir": "gen"
+    },
+    "ui": {
+        "related_filter_keywords": [
+            "BuildModeRandomRotation",
+            "Value",
+            "Amount"
+        ]
     }
 }
 ```
 
 All paths are relative to the project directory and automatically converted to absolute paths.
 
-## Architecture
+## How It Works
 
-**Caching System** — Unified cache stores found assets and not-found markers. Auto-reloads when CLI modifies the cache file.
+**Caching** — Smart cache with MTIME-based auto-reload. Stores found assets and not-found markers. Automatically reloads when the cache file changes.
 
-**UI Layer** — Central data manager coordinating GUID searches, browser navigation, and cache interactions.
+**Config Reload** — Configuration also supports MTIME-based auto-reload, just like cache. Reflects external changes instantly.
 
-**CLI Modules** — Separate routines (asset_finder, extract_rda, etc.) using shared cache and configuration.
+**Blacklist Filter** — Related GUIDs are filtered using keywords from config. Click disabled links in the UI to add keywords.
 
-## Project Structure
-
-```
-src/
-├── ui.py                      # GUI: GUID search, asset browser
-├── cache.py                   # Unified cache with auto-reload
-├── config.py                  # Configuration loader
-├── utils.py                   # Shared utilities
-├── routines/
-│   ├── asset_finder.py       # GUID search CLI
-│   ├── cache_manager.py      # Cache management CLI
-│   ├── extract_rda.py        # RDA extraction
-│   ├── unpack_assets.py      # XML unpacking
-│   └── assets_mapper.py       # Name→GUID mapping
-└── ui_components/
-    ├── browser.py            # Asset browser widget
-    └── mapper.py             # Asset mapper widget
-
-.cache/assets.json            # Cache file (auto-created)
-```
+**UI Architecture** — Reactive interface that updates immediately when keywords are added. Single source of truth: config.json
 
 ## Troubleshooting
 
@@ -159,6 +152,8 @@ src/
 **RdaConsole missing** — Download from [anno-mods/RdaConsole](https://github.com/anno-mods/RdaConsole) and place in `rda_console/`
 
 **assets.xml missing** — Run `python main.py --cli extract_rda` first, or verify path in `config.json`
+
+**Blacklist not updating** — Make sure config.json is saved. UI reloads automatically when file changes on disk.
 
 ## Resources
 
