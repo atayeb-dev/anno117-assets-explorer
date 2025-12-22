@@ -1,117 +1,108 @@
-# atayeb Assets Explorer
+# Atayeb Assets Explorer
 
-GUI utility for exploring Anno game assets by GUID lookup with intelligent caching.
+CLI utility for exploring, extracting, and analyzing Anno game assets with smart caching and configuration reload.
 
 If my work made your day better, consider [backing](https://ko-fi.com/atayeb) its creator.
 
-**Version:** 0.2 | **Python:** 3.10+ | **Dependencies:** Standard Library Only
+**Version:** 0.2 | **Python:** 3.10+ | **Dependencies:** None (Standard Library only)
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [CLI Reference](#cli-reference)
+- [Configuration](#configuration)
 
 ## Features
 
-- **GUID Lookup** — Search for assets by GUID with cached results
-- **Asset Browser** — Navigate related assets through template references
-- **Blacklist Filter** — Filter out noise with config-based keyword blacklisting
-- **Smart Cache** — Auto-reload when cache file changes (MTIME-based detection)
-- **Smart Config** — Auto-reload when config changes (like cache)
-- **CLI & GUI** — Both interfaces with shared caching and config
-- **Asset Management** — Extract RDA archives, unpack assets, generate mappings
-
-## Requirements
-
-- Python 3.10+
-- RdaConsole.exe (download from [anno-mods/RdaConsole](https://github.com/anno-mods/RdaConsole)) (optional)
+- ✅ **GUID Lookup** — Search assets by GUID with smart caching (MTIME-based auto-reload)
+- ✅ **Related Assets** — Find templates that reference a GUID
+- ✅ **RDA Extraction** — Extract RDA archives using RdaConsole.exe
+- ✅ **Asset Mapping** — Generate name-to-GUID mappings (Python or JSON)
+- ✅ **Asset Unpacking** — Extract XML assets from game files
+- ✅ **Cache Management** — Clear, inspect, or reset cache
+- ✅ **Smart Config** — Configuration auto-reloads on file modification
+- ✅ **Custom Config** — Override defaults with partial merge support
 
 ## Installation
 
+### Prerequisites
+- Python 3.10+
+- RdaConsole.exe (optional, for RDA extraction)
+  - Download: [anno-mods/RdaConsole](https://github.com/anno-mods/RdaConsole)
+  - Place in `rda_console/` directory
+
+### Setup
+
 ```bash
-# Clone repository
 git clone <repository-url>
 cd atayeb-assets-explorer
-
-# Download RdaConsole.exe from https://github.com/anno-mods/RdaConsole
-# Place it in rda_console/ directory
+python main.py --cli cache_manager --stats  # Test
 ```
 
-## Quick Start
+## CLI Reference
 
-### GUI Mode (Recommended)
-
-```bash
-python main.py --ui
-```
-
-1. Search for assets by GUID
-2. Browse related assets by clicking links
-3. Blacklist keywords by clicking disabled (gray) links
-4. Edit `config.json` to add/remove keywords from blacklist
-
-### CLI Mode
-
-```bash
-# Search for a GUID
-python main.py --cli asset_finder --guid 12345678 --json
-
-# Extract RDA files
-python main.py --cli extract_rda -i "annodata_00.rda"
-
-# Unpack XML assets
-python main.py --cli unpack_assets -a "assets.xml"
-
-# Generate asset mappings
-python main.py --cli assets_mapper -t "AssetPool.xml"
-
-# Manage cache
-python main.py --cli cache_manager --clear-not-found
-```
-
-## Commands
-
-### asset_finder (GUID Search)
+### asset_finder — Find asset by GUID
 
 ```bash
 python main.py --cli asset_finder [OPTIONS]
-  --guid GUID                     GUID to search for (required)
-  --json                          Output as JSON
+
+Options:
+  --guid GUID, -g GUID            GUID to search for (required)
+  --json, -j                      Output as JSON
+  --related, -r                   Find related GUIDs
+  --filter REGEX, -f REGEX        Filter related GUIDs by regex
+  --assets-dir PATH, -ad PATH     Custom assets directory
 ```
 
-### cache_manager
+### cache_manager — Manage cache
 
 ```bash
 python main.py --cli cache_manager [OPTIONS]
-  --clear-not-found              Clear only not-found entries
-  --clear-all                    Clear entire cache
+
+Options:
+  --stats                         Show cache statistics
+  --clear                         Clear entire cache
+  --clear-not-found               Clear only not-found entries
 ```
 
-### extract_rda
+### extract_rda — Extract RDA archives
 
 ```bash
 python main.py --cli extract_rda [OPTIONS]
-  -i, --input PATH               RDA file to extract
-  -o, --output PATH              Output directory (default: unpacked)
-  --filter REGEX                 Filter by regex
+
+Options:
+  -i, --input PATH                RDA file to extract (interactive if omitted)
+  -o, --output PATH               Output directory (default: unpacked/)
+  --filter REGEX                  Only extract files matching regex
 ```
 
-### unpack_assets
+### unpack_assets — Unpack XML assets
 
 ```bash
 python main.py --cli unpack_assets [OPTIONS]
-  -a, --assets-file PATH         Path to assets.xml
-  -o, --output PATH              Output directory (default: unpacked/assets)
-  --filter REGEX                 Filter by regex
+
+Options:
+  -a, --assets-file PATH          Assets XML file (default: from config)
+  -o, --output PATH               Output directory (default: unpacked/assets/)
+  --filter REGEX                  Filter asset names by regex
 ```
 
-### assets_mapper
+### assets_mapper — Generate name-to-GUID mappings
 
 ```bash
 python main.py --cli assets_mapper [OPTIONS]
-  -t, --template STRING          Asset XML filename (required)
-  -of, --output-format FORMAT    python or json (default: python)
-  --filter REGEX                 Filter asset names
+
+Options:
+  -t, --template STRING           Asset template filename (required)
+  -of, --output-format FORMAT     Output format: python or json (default: python)
+  -o, --output PATH               Output file (auto-generated if omitted)
+  --filter REGEX                  Filter asset names by regex
 ```
 
 ## Configuration
 
-Edit `config.json` to customize paths and blacklist keywords:
+### Default config.json
 
 ```json
 {
@@ -122,44 +113,41 @@ Edit `config.json` to customize paths and blacklist keywords:
         "assets_xml": "unpacked/data/base/config/export/assets.xml",
         "assets_unpack_dir": "unpacked/assets",
         "gen_dir": "gen"
-    },
-    "ui": {
-        "related_filter_keywords": [
-            "BuildModeRandomRotation",
-            "Value",
-            "Amount"
-        ]
     }
 }
 ```
 
-All paths are relative to the project directory and automatically converted to absolute paths.
+### Path Resolution
 
-## How It Works
+- Relative paths → converted to absolute from project root
+- Absolute paths → used as-is
+- Resolution handled in `src/config.py`
 
-**Caching** — Smart cache with MTIME-based auto-reload. Stores found assets and not-found markers. Automatically reloads when the cache file changes.
+### Custom Configuration (Partial Merge)
 
-**Config Reload** — Configuration also supports MTIME-based auto-reload, just like cache. Reflects external changes instantly.
+Override specific values without replacing entire config:
 
-**Blacklist Filter** — Related GUIDs are filtered using keywords from config. Click disabled links in the UI to add keywords.
+```bash
+python main.py --cfg custom.json --cli asset_finder --guid 12345678
+```
 
-**UI Architecture** — Reactive interface that updates immediately when keywords are added. Single source of truth: config.json
+**custom.json:**
+```json
+{
+    "partial": true,
+    "paths": {
+        "assets_xml": "/custom/path/assets.xml"
+    }
+}
+```
 
-## Troubleshooting
+The `"partial": true` flag merges with defaults instead of replacing them.
 
-**GUID not found** — Results are cached. Use `python main.py --cli cache_manager --clear-not-found` to retry.
+### Auto-Reload
 
-**RdaConsole missing** — Download from [anno-mods/RdaConsole](https://github.com/anno-mods/RdaConsole) and place in `rda_console/`
-
-**assets.xml missing** — Run `python main.py --cli extract_rda` first, or verify path in `config.json`
-
-**Blacklist not updating** — Make sure config.json is saved. UI reloads automatically when file changes on disk.
-
-## Resources
-
-- [RdaConsole](https://github.com/anno-mods/RdaConsole) — Asset extraction tool
-- [Python pathlib](https://docs.python.org/3/library/pathlib.html) — Path handling
-- [Python xml.etree](https://docs.python.org/3/library/xml.etree.elementtree.html) — XML processing
+- Edit `config.json` on disk
+- Next CLI command automatically loads new configuration
+- MTIME-based detection (like cache)
 
 ## License
 
