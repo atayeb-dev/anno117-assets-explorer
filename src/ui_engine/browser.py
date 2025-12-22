@@ -378,9 +378,19 @@ class AssetBrowserWidget:
         Add element_name to config blacklist.
 
         Merges with existing keywords without overwriting.
+        Re-applies filter to current asset display immediately.
         """
+        # Add to config (updates both RAM and disk)
         self.filter_mgr.add_to_config(element_name)
         logger.info(f"Added '{element_name}' to blacklist config")
+
+        # Refresh UI immediately with new filter applied
+        if self.current_asset_info and self.current_related_guids is not None:
+            self.display_asset_info(
+                self.current_asset_info["guid"],
+                self.current_asset_info,
+                self.current_related_guids
+            )
 
     # ============================================================
     # LAYOUT
