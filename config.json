@@ -9,7 +9,8 @@
     },
     "ui": {
         "related_filter_keywords": [
-            "BuildModeRandomRotation"
+            "BuildModeRandomRotation",
+            "Value"
         ]
     }
 }

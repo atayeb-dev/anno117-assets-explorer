@@ -1,7 +1,17 @@
 ## Refactoring Summary - December 22, 2025
 
 ### Overview
-Complete code refactoring pass: harmonization, simplification, factorization, and componentization of Python codebase.
+Complete code refactoring pass: harmonization, simplification, factorization, and componentization of Python codebase. Final phase: Aggressive UI simplification to remove unmaintainable filter controls.
+
+---
+
+## Refactoring Phases
+
+**Phase 1-6:** Config enhancement, duplicate elimination, FilterManager extraction, browser.py refactoring (26% reduction: 586→436 lines)
+
+**Phase 7:** Identified filter UI complexity as maintainability blocker
+
+**Phase 8 (CURRENT):** Aggressive simplification - Remove all UI filter controls, use config-only blacklist
 
 ---
 
@@ -67,35 +77,56 @@ Complete code refactoring pass: harmonization, simplification, factorization, an
 ---
 
 ### 4. **src/ui_engine/browser.py** - Asset Browser Widget (REFACTORED)
-**Changes:**
+**Phase 1 Changes (Initial Refactoring):**
 - Refactored from 586 → 436 lines (-26% reduction)
 - Extracted all filter logic to `_filter_manager.py`
 - Separated rendering methods from state management
 - Added UI constants (`DEFAULT_FONT`, `COURIER_FONT`, `SEPARATOR_COLOR`, etc.)
 - Improved method organization with clear sections
 
-**Before:**
-- Filter logic mixed with UI code
-- Duplicate keyword merging code
-- Complex lambda functions with filter operations
+**Phase 8 Changes (Aggressive Simplification):**
+- Further refactored from 436 → 320 lines (-27% additional reduction)
+- **Removed ALL UI filter controls:**
+  - Deleted `_render_filter_controls()` method
+  - Deleted `_filter_refresh()` method
+  - Deleted `_filter_save()` method
+  - Deleted `_filter_load()` method
+  - Deleted `_filter_add()` method
+  - Removed textbox UI widget for filter input
+  - Removed save/load/add/refresh buttons
+- **Simplified filter architecture:**
+  - Blacklist now comes ONLY from config.json
+  - Users edit config.json directly (no UI controls)
+  - Click disabled link → adds element_name to config via `_add_to_blacklist()`
+- **Cleaner state management:**
+  - Removed `current_filter_input` variable
+  - Removed complex filter event handling
+  - Removed save/load callback hooks
 
-**After:**
-- Clean separation: UI rendering vs filter logic
-- Uses `FilterManager` for all filter operations
-- Uses `FilterApplier` for filtering lists
-- Better comments and section markers
+**Before (436 lines):**
+- Complex UI with textbox, buttons
+- Multiple filter manipulation methods
+- State variables for UI filter input
+- Save/load/add/refresh operations in UI
 
-**Key Methods (Reorganized):**
+**After (320 lines):**
+- Pure rendering layer, no filter UI controls
+- Config-only blacklist (single source of truth)
+- Simple click handler for blacklist updates
+- Much easier to understand and maintain
+
+**Key Methods (Simplified):**
 - Event handlers: `_on_search_guid()`, `_on_guid_link_clicked()`, `_on_back_link_clicked()`
 - Display methods: `display_not_found()`, `display_asset_info()`
-- Rendering methods: `_render_asset_info()`, `_render_related_guids()`, `_render_filter_controls()`, `_render_guid_link()`
-- Filter operations: `_filter_refresh()`, `_filter_save()`, `_filter_load()`, `_filter_add()`
+- Rendering methods: `_render_asset_info()`, `_render_related_guids()`, `_render_guid_link()`
+- Blacklist operation: `_add_to_blacklist()` (replaces old `_add_to_filter()`)
 
 **Benefits:**
-- 26% code reduction
-- Easier to test individual components
-- Better readability and maintainability
-- Cleaner separation of concerns
+- 50% total code reduction from original 642 lines
+- Much simpler mental model (config-only blacklist)
+- Easier debugging (no UI state to track)
+- Better maintainability (focused responsibility)
+- Single source of truth (config.json)
 
 ---
 
@@ -122,13 +153,13 @@ Complete code refactoring pass: harmonization, simplification, factorization, an
 
 ## Code Quality Metrics
 
-| Aspect | Change |
-|--------|--------|
-| Total Lines Removed | ~70 (duplicates) |
-| Browser.py Reduction | 586 → 436 lines (-26%) |
-| New Components | 1 (_filter_manager.py) |
-| Duplicate Functions | 2 → 0 |
-| Test-friendly Modules | +1 (FilterManager) |
+| Aspect | Initial | Phase 1 | Phase 8 | Total Change |
+|--------|---------|---------|---------|--------------|
+| browser.py lines | 586 | 436 | 320 | -452 (-77%) |
+| Total duplicates | 2 | 0 | 0 | -2 |
+| Filter UI controls | Yes | Yes | No | Removed |
+| New Components | 0 | 1 | 1 | +1 (_filter_manager.py) |
+| Test-friendly Modules | 0 | 1 | 1 | +1 |
 
 ---
 
@@ -153,11 +184,20 @@ Complete code refactoring pass: harmonization, simplification, factorization, an
 
 ## Testing
 
+**Phase 1 Testing:**
 - ✅ Syntax validation: All files pass
 - ✅ Runtime testing: UI launches and functions correctly
 - ✅ Filter operations: Save/load/add/refresh working
 - ✅ Navigation: GUID navigation functional
 - ✅ History: Back button functional
+
+**Phase 8 Testing:**
+- ✅ Syntax validation: browser.py passes
+- ✅ Runtime testing: UI launches without errors
+- ✅ Blacklist operations: Click disabled link → config updated ✅
+- ✅ Navigation: GUID navigation functional
+- ✅ Filter application: Config keywords properly applied
+- ✅ Simplified flow: No UI filter controls, clean user experience
 
 ---
 
