@@ -17,31 +17,22 @@ from collections import defaultdict
 from pathlib import Path
 from typing import DefaultDict
 
-from ..config import load_config
+from ..config import get_path, load_global_config
+from ..log import log, ansi_text
 from ..utils import (
-    setup_logging,
     sanitize_filename,
     indent_xml,
-    select_file_gui,
     load_xml_file,
+    CustomArgumentParser,
 )
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-logger = setup_logging()
-_config = load_config()
-UNPACK_DIR = _config["paths"]["assets_unpack_dir"]
-
 
 # ============================================================
 # LOADING
 # ============================================================
 
 
-def _load_assets(
-    assets_xml_path: Path, filter_regex: str = ""
+def _unpack_assets(
+    assets_xml_path: Path, mode: str, filter_regex: str = ""
 ) -> tuple[DefaultDict[str, list], list]:
     """
     Load and filter assets from XML file.
@@ -60,7 +51,7 @@ def _load_assets(
     if not assets_xml_path.exists():
         raise FileNotFoundError(f"assets.xml not found: {assets_xml_path}")
 
-    logger.info(f"Loading: {assets_xml_path}")
+    log(f"Loading: {assets_xml_path}", "info")
     root = load_xml_file(assets_xml_path)
     if root is None:
         raise RuntimeError(f"Failed to parse XML: {assets_xml_path}")
@@ -72,17 +63,25 @@ def _load_assets(
     regex_pattern = re.compile(filter_regex) if filter_regex else None
 
     for asset in root.findall(".//Asset"):
-        template_node = asset.find("Template")
-        if template_node is None:
-            continue
+        node = None
+        if mode == "templates":
+            node = asset.find("./Template")
+            if node is None:
+                # assets_by_template["_no_template"].append(asset)
+                continue
+        elif mode == "guids":
+            node = asset.find("./Values/Standard/GUID")
+            if node is None:
+                # assets_by_template["_no_guid"].append(asset)
+                continue
 
-        asset_template = template_node.text.strip()
+        node_text = node.text.strip()
 
         # Apply regex filter
-        if regex_pattern and not regex_pattern.search(asset_template):
+        if regex_pattern and not regex_pattern.search(node_text):
             continue
 
-        assets_by_template[asset_template].append(asset)
+        assets_by_template[node_text].append(asset)
         all_assets.append(asset)
 
     return assets_by_template, all_assets
@@ -94,8 +93,7 @@ def _load_assets(
 
 
 def _write_outputs(
-    assets_by_template: DefaultDict[str, list],
-    unpacked_dir: Path,
+    assets: DefaultDict[str, list], unpacked_dir: Path, merge=False
 ) -> None:
     """
     Write filtered assets to output XML files.
@@ -106,24 +104,33 @@ def _write_outputs(
         assets_by_template: Assets grouped by template name.
         unpacked_dir: Output directory for asset files.
     """
-    # Create output directory if it doesn't exist (don't remove existing files)
+    # Create output directory (don't remove existing files)
     unpacked_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write per-template files
-    for asset_template, assets in assets_by_template.items():
-        safe_name = sanitize_filename(asset_template)
-        output_path = unpacked_dir / f"{safe_name}.xml"
+    assets_root = ET.Element("Assets")
+    output_paths: list[Path] = []
 
-        assets_root = ET.Element("Assets")
+    for asset_template, assets in assets.items():
+        safe_name = sanitize_filename(asset_template)
+
         for asset in assets:
             assets_root.append(asset)
 
+        if not merge:
+            output_path = unpacked_dir / f"{safe_name}.xml"
+            indent_xml(assets_root)
+            ET.ElementTree(assets_root).write(
+                output_path, encoding="utf-8", xml_declaration=True
+            )
+            output_paths.append(output_path)
+            assets_root = ET.Element("Assets")
+    if merge:
+        output_path = unpacked_dir / f"{merge}.xml"
         indent_xml(assets_root)
         ET.ElementTree(assets_root).write(
             output_path, encoding="utf-8", xml_declaration=True
         )
-
-        logger.info(f"✔ {asset_template}: {len(assets)} assets → {output_path}")
+        log(f"Unpacked assets: {len(assets_root)} assets → {output_paths}", "success")
 
 
 # ============================================================
@@ -131,20 +138,49 @@ def _write_outputs(
 # ============================================================
 
 
-def _select_file_gui() -> str:
-    """
-    Open file dialog to select an assets XML file.
+help_text = "\
+\t{fh/[Unpack Help]}: unpacks assets from {fh/Anno assets.xml}, parses given {fh/asset} file and outputs found patterns into new {fh/xml} files\n\
+\t{hu/[Usage]}: unpack_assets \
+{hur/'-a', '--assets'} {hv/[path/to/assets.xml]} \
+{hu/'-t', '--templates'} {hv/[regex]} | \
+{hu/'-g', '--guids'} {hv/[guid1,guid2]} \
+{hu/'-m', '--merge'} {hv/[filename]}\n\
+\t{hf/[Feature]}: {hu/-t} {hul/template} {hf/mode}: unpacks by template name {hvl/(optional regex filter)}. Writes unpacked files to {hfl/'templates/templatename.xml'}\n\
+\t{hf/[Feature]}: {hu/-g} {hul/GUID} {hf/mode}: unpacks by {hvl/comma-separated GUIDs}. Writes unpacked files to {hfl/'guids/guid.xml'}\n\
+\t{hf/[Feature]}: {hu/-m} {hul/merge} {hf/mode}: merges unpacked assets into a {hvl/single output filename}. Writes output to {hfl/'merge/[filename].xml'}\
+"
 
-    Returns:
-        Path to selected file, or empty string if cancelled.
-    """
-    return select_file_gui(
-        title="Select assets.xml file",
-        filetypes=[("XML files", "*.xml"), ("All files", "*.*")],
+
+def help():
+    return help_text
+
+
+def build_parser(parser: CustomArgumentParser) -> None:
+    parser.add_argument(
+        "-a",
+        "--assets-file",
+        type=Path,
+    )
+    parser.add_argument(
+        "-t",
+        "--templates",
+        nargs="?",
+        const=True,  # Value if present without argument
+        type=str,
+    )
+    parser.add_argument(
+        "-g",
+        "--guids",
+        type=lambda s: s.split(","),
+    )
+    parser.add_argument(
+        "-m",
+        "--merge",
+        type=str,
     )
 
 
-def main(args: list[str] | None = None) -> int:
+def run(parsed: CustomArgumentParser) -> int:
     """
     Main entry point for unpack_assets module.
 
@@ -154,68 +190,41 @@ def main(args: list[str] | None = None) -> int:
     Returns:
         Exit code (0 on success, non-zero on failure).
     """
-    parser = argparse.ArgumentParser(description="Unpack assets from Anno assets.xml")
-    parser.add_argument(
-        "-a",
-        "--assets-file",
-        type=Path,
-        default=None,
-        help=f"Path to assets.xml file (default: select via GUI)",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        default=UNPACK_DIR,
-        help=f"Output directory for assets (default: {UNPACK_DIR})",
-    )
-    parser.add_argument(
-        "--filter",
-        type=str,
-        default="",
-        help="Optional regex pattern to filter asset types",
-    )
-    parsed = parser.parse_args(args)
+    from ..log import log_args
 
-    # Determine output path for assets
-    unpacked_dir = parsed.output
-    filter_regex = parsed.filter
-
+    if not parsed.assets_file:
+        raise ValueError("argument {hu/--assets-file} is required.")
+    unpack_dir = get_path("unpack_dir")
+    filter_regex = None
+    mode = "templates" if parsed.templates else "guids" if parsed.guids else ""
     try:
-        logger.info(f"Output directory (assets): {unpacked_dir}")
-        if filter_regex:
-            logger.info(f"Filter regex: {filter_regex}")
+        if mode:
+            assets_file = parsed.assets_file
+            unpack_dir = unpack_dir.joinpath("merged" if parsed.merge else mode)
 
-        # Determine assets file: CLI arg → GUI selection (no silent default)
-        assets_file = parsed.assets_file
-        if not assets_file:
-            selected_file = _select_file_gui()
-            if not selected_file:
-                logger.error("No assets file selected")
-                return 1
-            assets_file = Path(selected_file)
+            if parsed.templates:
+                filter_regex = (
+                    parsed.templates if isinstance(parsed.templates, str) else None
+                )
+            elif parsed.guids:
+                filter_regex = "|".join(parsed.guids)
 
-        assets_by_template, all_assets = _load_assets(assets_file, filter_regex)
-        logger.info(f"Valid assets found (after filter): {len(all_assets)}")
+            log(f"Unpacking mode: {mode} (filter: {filter_regex})")
+            assets_by_template, all_assets = _unpack_assets(
+                assets_file, mode, filter_regex
+            )
 
-        _write_outputs(assets_by_template, unpacked_dir)
-        logger.info("Unpack assets complete ✓")
-        return 0
-
+            log(f"Valid assets founds: {len(all_assets)}")
+            _write_outputs(assets_by_template, unpack_dir, parsed.merge)
+            log("Unpack assets complete ✓")
+            return 0
+        else:
+            raise ValueError(
+                "Either {hu/--templates} or {hu/--guids} must be specified."
+            )
     except FileNotFoundError as e:
-        logger.error(f"File error: {e}")
+        log(f"File error: {e}", "error")
         return 1
     except ET.ParseError as e:
-        logger.error(f"XML parse error: {e}")
+        log(f"XML parse error: {e}", "error")
         return 1
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        return 1
-
-
-# Alias for compatibility
-cli = main
-
-
-if __name__ == "__main__":
-    sys.exit(main())

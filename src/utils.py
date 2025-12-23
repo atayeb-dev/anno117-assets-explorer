@@ -8,33 +8,22 @@ Provides reusable functions for file handling, XML processing, and naming conven
 # IMPORTS
 # ============================================================
 
-import json
-import logging
 import xml.etree.ElementTree as ET
 from fnmatch import fnmatch
 from pathlib import Path
-from tkinter import Tk, filedialog
-
-logger = logging.getLogger(__name__)
-
 
 # ============================================================
-# LOGGING & SETUP
+# ARGUMENT PARSING
 # ============================================================
 
+import argparse
 
-def setup_logging(level: int = logging.INFO) -> logging.Logger:
-    """
-    Configure logging with standard format.
 
-    Args:
-        level: Logging level (default: INFO).
+class CustomArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that raises ValueError instead of exiting."""
 
-    Returns:
-        Configured logger instance.
-    """
-    logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
-    return logging.getLogger(__name__)
+    def error(self, message):
+        raise Exception(message)
 
 
 # ============================================================
@@ -173,44 +162,6 @@ def match_pattern(name: str, patterns: list[str]) -> bool:
 # ============================================================
 
 
-def validate_file_exists(file_path: Path, description: str = "File") -> bool:
-    """
-    Validate that a file exists and is readable.
-
-    Args:
-        file_path: Path to file to validate.
-        description: Human-readable description for error messages.
-
-    Returns:
-        True if file exists and is valid, False otherwise.
-    """
-    if not file_path.exists():
-        logger.error(f"{description} not found: {file_path}")
-        return False
-    if not file_path.is_file():
-        logger.error(f"Not a file: {file_path}")
-        return False
-    return True
-
-
-def ensure_dir_exists(dir_path: Path) -> bool:
-    """
-    Ensure directory exists, creating it if necessary.
-
-    Args:
-        dir_path: Path to directory.
-
-    Returns:
-        True if directory exists or was created successfully.
-    """
-    try:
-        dir_path.mkdir(parents=True, exist_ok=True)
-        return True
-    except OSError as e:
-        logger.error(f"Failed to create directory {dir_path}: {e}")
-        return False
-
-
 def load_json_config(config_path: Path, defaults: dict | None = None) -> dict:
     """
     Load JSON configuration file with fallback to defaults.
@@ -242,30 +193,6 @@ def load_json_config(config_path: Path, defaults: dict | None = None) -> dict:
     except json.JSONDecodeError as e:
         logger.error(f"Config JSON malformed: {e}")
         raise ValueError(f"Invalid JSON in {config_path}") from e
-
-
-def select_file_gui(
-    title: str = "Select a file",
-    filetypes: list[tuple[str, str]] | None = None,
-) -> str:
-    """
-    Open a file selection dialog.
-
-    Args:
-        title: Dialog window title.
-        filetypes: List of (label, pattern) tuples for file filtering.
-                  Example: [("XML files", "*.xml"), ("All files", "*.*")]
-
-    Returns:
-        Path to selected file, or empty string if cancelled.
-    """
-    if filetypes is None:
-        filetypes = [("All files", "*.*")]
-
-    root = Tk()
-    root.withdraw()
-    filepath = filedialog.askopenfilename(title=title, filetypes=filetypes)
-    return filepath
 
 
 def load_xml_file(file_path: Path) -> ET.Element | None:

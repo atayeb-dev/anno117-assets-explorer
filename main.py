@@ -16,24 +16,101 @@ Architecture:
 # ============================================================
 
 import argparse
+from ast import mod
 import importlib
-import logging
 import sys
 from pathlib import Path
+from src.config import load_global_config, print_config_state
+from src.log import log
+from src.utils import CustomArgumentParser
 
 # ============================================================
 # CONSTANTS
 # ============================================================
 
-logger = logging.getLogger(__name__)
-
 CLI_PREFIX = "src.routines."
 UI_MODULE = "src.ui"
-CALLABLE_NAMES = ("main", "run", "cli", "ui")
+
+
+class LaunchError(Exception):
+    """Custom exception for launch errors."""
+
+    def __init__(self):
+
+        self.message = "\
+\n==\n\
+{fh/atayeb Assets Explorer}\n\
+  - Features:\n\
+    - Interactive CLI.\n\
+Type {hu/'-h'} for help.\n\
+If my work made your day better, consider backing its creator.\n\
+==\n\
+"
+        super().__init__(self.message)
+
 
 # ============================================================
 # MODULE DISPATCHER
 # ============================================================
+
+
+def _interactive_prompt() -> int:
+    """
+    Interactive CLI prompt loop.
+
+    Returns:
+        Exit code (0 on normal exit).
+    """
+    log("\n==")
+    log("Assets Explorer - Interactive CLI")
+    log("Welcome! Type {hu/help} for commands ; {hu/exit} or {hu/bye} to quit.")
+    print_config_state()
+    log("==")
+
+    while True:
+        try:
+            # Get user input
+            cmd = input(">>> ").strip()
+
+            if not cmd:
+                continue
+
+            # Handle exit
+            if cmd.lower() in ("exit", "bye", "quit"):
+                log("{succ/Goodbye!}")
+                return 0
+
+            # Handle help
+            if cmd.lower() == "help":
+                log("\nAvailable modules:")
+                log("  asset_finder        Search for assets by GUID")
+                log("  cache_manager       Manage cache (stats, clear)")
+                log("  extract_rda         Extract RDA archives")
+                log("  unpack_assets       Unpack XML assets")
+                log("  assets_mapper       Generate name-to-GUID mappings")
+                log("\nUsage: MODULE [ARGS...]")
+                log("Example: asset_finder --guid 12345678 --json\n")
+                continue
+
+            # Parse command
+            cmd_parts = cmd.split()
+            module_name = cmd_parts[0]
+            module_args = cmd_parts[1:]
+
+            # Execute module
+            result = _invoke_module(module_name, module_args)
+
+            if result != 0:
+                log(f"{{err/Command failed with exit code {result}}}\n")
+            else:
+                log(f"{{succ/Command executed successfully}}\n")
+
+        except ModuleNotFoundError:
+            log(f"{{err/Module not found: {module_name}}}\n")
+        except KeyboardInterrupt:
+            log("\n{err/Interrupted!}")
+        except Exception as e:
+            log(f"{{err/{e}}}\n")
 
 
 def _invoke_module(module_name: str, module_args: list[str]) -> int | None:
@@ -43,6 +120,8 @@ def _invoke_module(module_name: str, module_args: list[str]) -> int | None:
     Attempts to import the specified module and calls the first available
     callable among: main, run, cli, or ui. Handles both cases where the
     callable accepts arguments and where it doesn't.
+
+    Hot reload enabled: Module is reloaded on each invocation for development.
 
     Args:
         module_name: Fully qualified module name to import.
@@ -55,28 +134,63 @@ def _invoke_module(module_name: str, module_args: list[str]) -> int | None:
         ModuleNotFoundError: If module cannot be imported.
         Exception: Any exception raised by the module's callable.
     """
-    try:
-        mod = importlib.import_module(module_name)
-    except ModuleNotFoundError as e:
-        logger.error(f"Module not found: {module_name}")
-        raise
+    if not module_name or module_name.strip() == "":
+        log(f"{{err/Module not found: {module_name}}}")
 
-    for fn_name in CALLABLE_NAMES:
-        if not hasattr(mod, fn_name):
-            continue
+    # shortcuts
+    module_short_name = module_name
+    if module_name in ["config", "cache"]:
+        module_name = f"{module_name}_manager"
 
-        func = getattr(mod, fn_name)
-        logger.debug(f"Calling {module_name}.{fn_name}()")
+    module_name = f"{CLI_PREFIX}{module_name}"
+    mod = importlib.import_module(module_name)
+    mod = importlib.reload(mod)  # Hot reload for development
 
+    entry_point = getattr(mod, "run")
+    if entry_point is None or not callable(entry_point):
+        log(f"{{err/No entry point found in {module_name}}}")
+        return None
+
+    # Print help if requested
+    if "--help" in module_args or "-h" in module_args:
+        if not hasattr(mod, "help"):
+            log("{err/{r/Nothing can help you now...}}", stream=True)
+            return 0
+        else:
+            parser = CustomArgumentParser(add_help=False)
+            parser.add_argument(
+                "--help",
+                "-h",
+                action="store_true",
+            )
+            parser.add_argument(
+                "--instant",
+                "-i",
+                action="store_true",
+            )
+            for arg in module_args:
+                if arg not in ("-i", "--instant", "-h", "--help"):
+                    module_args.remove(arg)
+            parsed = parser.parse_args(module_args)
+            help_func = getattr(mod, "help")
+            help_text = ""
+            try:
+                help_text = help_func(parsed)
+            except Exception:
+                help_text = help_func()
+            log(help_text, stream=not parsed.instant)
+            return 0
+    else:
         try:
-            return func(module_args)
-        except TypeError:
-            # Callable doesn't accept arguments, try without
-            logger.debug(f"Calling {module_name}.{fn_name}() without args")
-            return func()
-
-    logger.warning(f"No entry point found in {module_name}")
-    return None
+            parser = CustomArgumentParser(add_help=False)
+            getattr(mod, "build_parser")(parser)
+            parsed = parser.parse_args(
+                [arg for arg in module_args if arg not in ("-h", "--help")]
+            )
+            return entry_point(parsed)
+        except Exception as e:
+            log(f"{{err/Error in module {{fn/{module_short_name}}}: {e}}}")
+            return 1
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -88,7 +202,6 @@ def _build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         description="Atayeb Assets Explorer - Asset extraction and management utility",
-        epilog="Examples: main.py --ui | main.py --cli asset_finder",
     )
     parser.add_argument(
         "-cfg",
@@ -119,48 +232,31 @@ def main(args: list[str] | None = None) -> int:
     Returns:
         Exit code (0 on success, non-zero on failure).
     """
-    # Configure logging
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
     parser = _build_parser()
     parsed = parser.parse_args(args)
 
-    # Handle custom config (loads via src.config which handles merging)
-    if parsed.config:
-        from src.config import load_config, set_global_config
-
-        try:
-            # Load custom config (handles partial merging automatically)
-            custom_config = load_config(parsed.config)
-            # Set as global config for all modules to use
-            set_global_config(custom_config, config_path=parsed.config)
-            logger.info(f"Custom config loaded and set globally: {parsed.config}")
-        except Exception as e:
-            logger.error(f"Failed to load custom config: {e}")
-            return 1
+    # Load configuration
+    load_global_config(parsed.config)
 
     try:
-        if parsed.cli:
+        if parsed.cli is not None:
             if len(parsed.cli) == 0:
-                parser.error("--cli requires a module name")
+                return _interactive_prompt()
 
             module_name = parsed.cli[0]
             module_args = parsed.cli[1:]
-            full_module_name = f"{CLI_PREFIX}{module_name}"
 
-            logger.info(f"Launching CLI: {module_name}")
-            result = _invoke_module(full_module_name, module_args)
+            result = _invoke_module(module_name, module_args)
             return result or 0
 
         else:
-            parser.error("Specify a mode: --cli MODULE or --ui")
-            return 1
+            raise LaunchError()
 
-    except ModuleNotFoundError as e:
-        logger.error(f"Module not found: {e}")
+    except LaunchError as e:
+        log(f"{e}")
         return 1
     except Exception as e:
-        logger.error(f"Error: {e}")
+        log(f"Uncaught exception: {e}", "error")
         return 1
 
 
