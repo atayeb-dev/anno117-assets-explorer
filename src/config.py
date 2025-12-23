@@ -16,8 +16,7 @@ Architecture:
 
 import json
 from pathlib import Path
-from typing import Any
-from src.log import log
+from .log import log
 
 # ============================================================
 # CONSTANTS

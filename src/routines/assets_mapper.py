@@ -9,31 +9,21 @@ Supports optional regex filtering and flexible output locations.
 # IMPORTS
 # ============================================================
 
-import argparse
 import json
 import re
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
 from ..cache import get_cached_asset, set_cached_asset
-from ..config import load_config
+from ..config import get_path
+from ..log import log
 from ..utils import (
-    setup_logging,
     sanitize_filename,
     generate_constant_name,
     load_xml_file,
+    CustomArgumentParser,
 )
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-logger = setup_logging()
-_config = load_config()
-ASSETS_DIR = _config["paths"]["assets_unpack_dir"]
-GEN_DIR = _config["paths"]["gen_dir"]
 
 # ============================================================
 # PARSING
@@ -83,7 +73,7 @@ def _parse_asset_file(
         try:
             guid = int(guid_str)
         except ValueError:
-            logger.warning(f"Invalid GUID value: {guid_str} for asset: {name}")
+            log(f"{{err/Invalid GUID value: {guid_str} for asset: {name}}}")
             continue
 
         # Apply regex filter if provided
@@ -145,7 +135,7 @@ def _write_python_mapping(
 
         f.write("}\n")
 
-    logger.info(f"Python mapping written: {output_path}")
+    log(f"Python mapping written: {output_path}")
 
 
 def _write_json_mapping(
@@ -175,27 +165,19 @@ def _write_json_mapping(
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-    logger.info(f"JSON mapping written: {output_path}")
+    log(f"JSON mapping written: {output_path}")
 
 
 # ============================================================
-# MAIN
+# CLI
 # ============================================================
 
 
-def main(args: list[str] | None = None) -> int:
-    """
-    Main entry point for assets_mapper module.
+def build_parser(parser: CustomArgumentParser) -> None:
+    """Build argument parser for assets_mapper."""
+    assets_dir = get_path("assets_unpack_dir")
+    gen_dir = get_path("gen_dir")
 
-    Args:
-        args: Command-line arguments (defaults to sys.argv[1:]).
-
-    Returns:
-        Exit code (0 on success, non-zero on failure).
-    """
-    parser = argparse.ArgumentParser(
-        description="Create asset name-to-GUID mappings from XML files"
-    )
     parser.add_argument(
         "-t",
         "--template",
@@ -206,9 +188,9 @@ def main(args: list[str] | None = None) -> int:
     parser.add_argument(
         "-ad",
         "--assets-dir",
-        type=str,
-        default=str(ASSETS_DIR),
-        help=f"Assets directory (default: {ASSETS_DIR})",
+        type=Path,
+        default=assets_dir,
+        help=f"Assets directory (default: {assets_dir})",
     )
     parser.add_argument(
         "-of",
@@ -222,8 +204,8 @@ def main(args: list[str] | None = None) -> int:
         "-od",
         "--output-dir",
         type=Path,
-        default=GEN_DIR,
-        help=f"Output directory for generated mappings (default: {GEN_DIR})",
+        default=gen_dir,
+        help=f"Output directory for generated mappings (default: {gen_dir})",
     )
     parser.add_argument(
         "--filter",
@@ -232,24 +214,34 @@ def main(args: list[str] | None = None) -> int:
         help="Optional regex pattern to filter asset names",
     )
 
-    try:
-        parsed = parser.parse_args(args)
 
+def run(parsed: CustomArgumentParser) -> int:
+    """
+    Main entry point for assets_mapper module.
+
+    Args:
+        parsed: Parsed command-line arguments.
+
+    Returns:
+        Exit code (0 on success, non-zero on failure).
+    """
+
+    try:
         # Locate asset file in assets directory
-        asset_path = Path(parsed.assets_dir) / parsed.template
+        asset_path = parsed.assets_dir / parsed.template
 
         if not asset_path.exists():
-            logger.error(f"Asset file not found: {asset_path}")
+            log(f"Asset file not found: {asset_path}", "error")
             return 1
 
-        logger.info(f"Parsing asset file: {asset_path}")
+        log(f"Parsing asset file: {asset_path}")
 
         # Create mapping
         mapping = _parse_asset_file(asset_path, parsed.filter)
-        logger.info(f"Extracted {len(mapping)} asset mappings")
+        log(f"Extracted {len(mapping)} asset mappings")
 
         if not mapping:
-            logger.warning("No assets found matching criteria")
+            log("No assets found matching criteria", "error")
             return 1
 
         # Prepare output
@@ -265,12 +257,6 @@ def main(args: list[str] | None = None) -> int:
         cmd_parts = ["python main.py --cli assets_mapper", f"-t {parsed.template}"]
         if parsed.filter:
             cmd_parts.append(f"--filter {parsed.filter}")
-        if str(parsed.assets_dir) != str(ASSETS_DIR):
-            cmd_parts.append(f"-ad {parsed.assets_dir}")
-        if parsed.output_format != "python":
-            cmd_parts.append(f"-of {parsed.output_format}")
-        if str(parsed.output_dir) != str(GEN_DIR):
-            cmd_parts.append(f"-od {parsed.output_dir}")
         command_line = " ".join(cmd_parts)
 
         if parsed.output_format == "python":
@@ -282,19 +268,15 @@ def main(args: list[str] | None = None) -> int:
             output_file = output_dir / f"{safe_filename}.json"
             _write_json_mapping(output_file, mapping, asset_path, command_line)
 
-        logger.info("Asset mapping complete ✓")
+        log("Asset mapping complete ✓", "success")
         return 0
 
     except FileNotFoundError as e:
-        logger.error(f"File error: {e}")
+        log(f"File error: {e}", "error")
         return 1
     except ET.ParseError as e:
-        logger.error(f"XML parse error: {e}")
+        log(f"XML parse error: {e}", "error")
         return 1
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        log(f"Unexpected error: {e}", "error")
         return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

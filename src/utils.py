@@ -11,6 +11,7 @@ Provides reusable functions for file handling, XML processing, and naming conven
 import xml.etree.ElementTree as ET
 from fnmatch import fnmatch
 from pathlib import Path
+from .log import log
 
 # ============================================================
 # ARGUMENT PARSING
@@ -162,39 +163,6 @@ def match_pattern(name: str, patterns: list[str]) -> bool:
 # ============================================================
 
 
-def load_json_config(config_path: Path, defaults: dict | None = None) -> dict:
-    """
-    Load JSON configuration file with fallback to defaults.
-
-    Args:
-        config_path: Path to JSON config file.
-        defaults: Default configuration dict if file not found.
-
-    Returns:
-        Loaded configuration or defaults if file not found.
-
-    Raises:
-        ValueError: If JSON is malformed.
-    """
-    import json
-
-    if defaults is None:
-        defaults = {}
-
-    if not config_path.exists():
-        logger.info(f"Config not found at {config_path}, using defaults")
-        return defaults
-
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            config = json.load(f)
-        logger.info(f"Loaded config from {config_path}")
-        return config
-    except json.JSONDecodeError as e:
-        logger.error(f"Config JSON malformed: {e}")
-        raise ValueError(f"Invalid JSON in {config_path}") from e
-
-
 def load_xml_file(file_path: Path) -> ET.Element | None:
     """
     Load and parse XML file.
@@ -209,8 +177,8 @@ def load_xml_file(file_path: Path) -> ET.Element | None:
         tree = ET.parse(file_path)
         return tree.getroot()
     except ET.ParseError as e:
-        logger.warning(f"Error parsing {file_path.name}: {e}")
+        log(f"{{err/Error parsing {file_path.name}: {e}}}")
         return None
     except OSError as e:
-        logger.warning(f"Error reading {file_path.name}: {e}")
+        log(f"{{err/Error reading {file_path.name}: {e}}}")
         return None

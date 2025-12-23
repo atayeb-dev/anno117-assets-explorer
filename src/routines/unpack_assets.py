@@ -197,34 +197,23 @@ def run(parsed: CustomArgumentParser) -> int:
     unpack_dir = get_path("unpack_dir")
     filter_regex = None
     mode = "templates" if parsed.templates else "guids" if parsed.guids else ""
-    try:
-        if mode:
-            assets_file = parsed.assets_file
-            unpack_dir = unpack_dir.joinpath("merged" if parsed.merge else mode)
+    if mode:
+        assets_file = parsed.assets_file
+        unpack_dir = unpack_dir.joinpath("merged" if parsed.merge else mode)
 
-            if parsed.templates:
-                filter_regex = (
-                    parsed.templates if isinstance(parsed.templates, str) else None
-                )
-            elif parsed.guids:
-                filter_regex = "|".join(parsed.guids)
-
-            log(f"Unpacking mode: {mode} (filter: {filter_regex})")
-            assets_by_template, all_assets = _unpack_assets(
-                assets_file, mode, filter_regex
+        if parsed.templates:
+            filter_regex = (
+                parsed.templates if isinstance(parsed.templates, str) else None
             )
+        elif parsed.guids:
+            filter_regex = "|".join(parsed.guids)
 
-            log(f"Valid assets founds: {len(all_assets)}")
-            _write_outputs(assets_by_template, unpack_dir, parsed.merge)
-            log("Unpack assets complete ✓")
-            return 0
-        else:
-            raise ValueError(
-                "Either {hu/--templates} or {hu/--guids} must be specified."
-            )
-    except FileNotFoundError as e:
-        log(f"File error: {e}", "error")
-        return 1
-    except ET.ParseError as e:
-        log(f"XML parse error: {e}", "error")
-        return 1
+        log(f"Unpacking mode: {mode} (filter: {filter_regex})")
+        assets_by_template, all_assets = _unpack_assets(assets_file, mode, filter_regex)
+
+        log(f"Valid assets founds: {len(all_assets)}")
+        _write_outputs(assets_by_template, unpack_dir, parsed.merge)
+        log("Unpack assets complete ✓")
+        return 0
+    else:
+        raise ValueError("Either {hu/--templates} or {hu/--guids} must be specified.")

@@ -6,13 +6,11 @@ and disable links to invalid assets in the UI.
 """
 
 import json
-import logging
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
+from .log import log
 
 # Cache file location
-CACHE_FILE = Path(__file__).parent.parent / ".cache" / "assets.json"
+CACHE_FILE = Path.cwd() / ".cache" / "cache.json"
 
 # Global cache (loaded on first access)
 _CACHE = None
@@ -24,7 +22,18 @@ def _ensure_cache_dir() -> None:
     CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _load_cache() -> dict:
+def _write_cache_file() -> None:
+    """Save cache to disk."""
+    _ensure_cache_dir()
+
+    try:
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(_CACHE, f, indent=2)
+    except IOError as e:
+        log(f"{{err/Failed to save cache: {e}}}")
+
+
+def _read_cache_file() -> dict:
     """Load cache from disk, returning empty dict if file doesn't exist."""
     _ensure_cache_dir()
 
@@ -35,29 +44,8 @@ def _load_cache() -> dict:
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, IOError) as e:
-        logger.warning(f"Failed to load cache: {e}, starting fresh")
+        log(f"{{err/Failed to load cache: {e}, starting fresh}}")
         return {}
-
-
-def _save_cache(cache: dict) -> None:
-    """Save cache to disk."""
-    _ensure_cache_dir()
-
-    try:
-        with open(CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(cache, f, indent=2)
-    except IOError as e:
-        logger.error(f"Failed to save cache: {e}")
-
-
-def reload_cache() -> dict:
-    """Reload cache from disk and return it."""
-    global _CACHE, _CACHE_MTIME
-    _CACHE = _load_cache()
-    # Update mtime after loading
-    if CACHE_FILE.exists():
-        _CACHE_MTIME = CACHE_FILE.stat().st_mtime
-    return _CACHE
 
 
 def _get_cache() -> dict:
@@ -69,47 +57,10 @@ def _get_cache() -> dict:
         current_mtime = CACHE_FILE.stat().st_mtime
         if _CACHE is None or _CACHE_MTIME != current_mtime:
             # File is new or has changed, reload it
-            logger.debug("Cache file modified, reloading from disk")
-            _CACHE = _load_cache()
+            _CACHE = _read_cache_file()
             _CACHE_MTIME = current_mtime
-    else:
-        # File doesn't exist yet, load empty cache
-        if _CACHE is None:
-            _CACHE = _load_cache()
-            _CACHE_MTIME = None
 
     return _CACHE
-
-
-def is_guid_not_found(guid: str) -> bool:
-    """
-    Check if a GUID was previously searched and not found.
-
-    Args:
-        guid: The GUID to check
-
-    Returns:
-        True if GUID is marked as not found, False otherwise
-    """
-    cached = get_cached_asset(guid)
-    return cached is not None and cached.get("not_found", False)
-
-
-def set_guid_not_found(guid: str) -> None:
-    """
-    Mark a GUID as not found (cache the search failure).
-
-    Args:
-        guid: The GUID to mark as not found
-    """
-    cache = _get_cache()
-
-    # Store as not found
-    cache[guid] = {"not_found": True}
-
-    # Save to disk
-    _save_cache(cache)
-    logger.debug(f"Cached GUID {guid} as not found")
 
 
 def get_cached_asset(guid: str) -> dict | None:
@@ -144,10 +95,6 @@ def set_cached_asset(
 ) -> None:
     """
     Cache asset data for a GUID (related_guids are NOT cached).
-
-    Related GUIDs are recalculated on demand (~4ms, negligible performance cost).
-    This keeps the cache file small and lightweight.
-
     Args:
         guid: The GUID as key
         asset_data: Asset information dict with 'name', 'template', 'file', etc.
@@ -158,37 +105,14 @@ def set_cached_asset(
     # Store asset data only (strip related_guids if present)
     cache_entry = asset_data.copy()
     cache_entry.pop("related", None)  # Remove related if present
-
     cache[guid] = cache_entry
 
     # Save to disk
-    _save_cache(cache)
-    logger.debug(f"Cached asset data for GUID {guid}")
+    _write_cache_file()
 
 
 def clear_cache() -> None:
     """Clear all cached data."""
     global _CACHE
     _CACHE = {}
-    _save_cache({})
-    logger.info("Cache cleared")
-
-
-def clear_not_found_cache() -> None:
-    """Clear only the not-found entries from cache."""
-    cache = _get_cache()
-
-    # Remove all entries marked as not_found
-    original_count = sum(1 for entry in cache.values() if entry.get("not_found", False))
-
-    cache = {
-        guid: entry
-        for guid, entry in cache.items()
-        if not entry.get("not_found", False)
-    }
-
-    _save_cache(cache)
-    global _CACHE
-    _CACHE = cache
-
-    logger.info(f"Cleared {original_count} not-found entries from cache")
+    _write_cache_file()

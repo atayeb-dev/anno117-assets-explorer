@@ -11,23 +11,13 @@ Reference: https://github.com/anno-mods/RdaConsole
 # IMPORTS
 # ============================================================
 
-import argparse
 import subprocess
 import sys
 from pathlib import Path
 
-from ..config import load_config
-from ..utils import setup_logging, select_file_gui, validate_file_exists
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-logger = setup_logging()
-_config = load_config()
-RDA_CONSOLE_EXEC = _config["paths"]["rda_console_exec"]
-UNPACKED_DIR = _config["paths"]["unpacked_dir"]
-
+from ..config import get_path
+from ..log import log
+from ..utils import select_file_gui, validate_file_exists, CustomArgumentParser
 
 # ============================================================
 # EXTRACTION
@@ -38,7 +28,7 @@ def _extract_rda(
     rda_path: Path,
     output_dir: Path,
     filter_pattern: str = "",
-    rdaconsole_path: Path = RDA_CONSOLE_EXEC,
+    rdaconsole_path: Path = None,
 ) -> None:
     """
     Execute RdaConsole.exe to extract RDA file.
@@ -47,8 +37,7 @@ def _extract_rda(
         rda_path: Path to the .rda file to extract.
         output_dir: Destination directory for extracted files.
         filter_pattern: Optional regex pattern to filter extracted files.
-        rdaconsole_path: Path to RdaConsole.exe (default: RDA_CONSOLE_EXEC).
-        detach_console: If True, run in separate console window (Windows only).
+        rdaconsole_path: Path to RdaConsole.exe.
 
     Raises:
         subprocess.CalledProcessError: If RdaConsole.exe fails.
@@ -67,22 +56,21 @@ def _extract_rda(
     if filter_pattern:
         cmd.extend(["--filter", filter_pattern])
 
-    logger.info(f"Running: {' '.join(cmd)}")
-    kwargs = {"check": True}
-    kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
-    subprocess.run(cmd, **kwargs)
+    log(f"Running: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
 
 
 # ============================================================
-# MAIN
+# CLI
 # ============================================================
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Build and return argument parser."""
-    parser = argparse.ArgumentParser(
-        description="Extract RDA files for Anno using RdaConsole"
-    )
+def build_parser(parser: CustomArgumentParser) -> None:
+    """Build argument parser for extract_rda."""
+
+    rda_console_path = get_path("rda_console_exec")
+    unpacked_dir = get_path("unpacked_dir")
+
     parser.add_argument(
         "-i",
         "--input",
@@ -93,8 +81,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "-o",
         "--output",
         type=Path,
-        default=UNPACKED_DIR,
-        help=f"Output directory (default: {UNPACKED_DIR})",
+        default=unpacked_dir,
+        help=f"Output directory (default: {unpacked_dir})",
     )
     parser.add_argument(
         "--filter",
@@ -105,69 +93,54 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--rdaconsole-path",
         type=Path,
-        default=RDA_CONSOLE_EXEC,
-        help=f"Path to RdaConsole.exe (default: {RDA_CONSOLE_EXEC})",
+        default=rda_console_path,
+        help=f"Path to RdaConsole.exe (default: {rda_console_path})",
     )
-    return parser
 
 
-def main(args: list[str] | None = None) -> int:
+def run(parsed: CustomArgumentParser) -> int:
     """
     Main entry point for RDA extraction.
 
     Args:
-        args: Command-line arguments (defaults to sys.argv[1:]).
+        parsed: Parsed command-line arguments.
 
     Returns:
         Exit code (0 on success, non-zero on failure).
     """
-    parser = _build_parser()
-    parsed = parser.parse_args(args)
-
     # Validate RdaConsole availability
     rdaconsole_path = parsed.rdaconsole_path
     if not rdaconsole_path.exists():
-        logger.error(f"RdaConsole.exe not found at: {rdaconsole_path}")
+        log(f"RdaConsole.exe not found at: {rdaconsole_path}", "error")
         return 1
 
     # Determine input file
     input_path = parsed.input
     if not input_path:
-        selected_file = select_file_gui()
+        selected_file = select_file_gui("Select RDA file to extract")
         if not selected_file:
-            logger.error("No input file selected")
+            log("No input file selected", "error")
             return 1
         input_path = Path(selected_file)
 
     # Validate input file
-    if not validate_file_exists(input_path, "RDA file"):
+    if not input_path.exists():
+        log(f"RDA file not found: {input_path}", "error")
         return 1
 
     # Extract with options
     output_dir = parsed.output
     filter_pattern = parsed.filter
 
-    logger.info(f"Extracting RDA: {input_path} → {output_dir}")
+    log(f"Extracting RDA: {input_path} → {output_dir}")
     if filter_pattern:
-        logger.info(f"Filter regex: {filter_pattern}")
+        log(f"Filter regex: {filter_pattern}")
 
-    try:
-        # Use separate console in GUI mode (when file selected via dialog)
-        _extract_rda(
-            input_path,
-            output_dir,
-            filter_pattern,
-            rdaconsole_path,
-        )
-        logger.info("Extraction complete")
-        return 0
-    except subprocess.CalledProcessError as e:
-        logger.error(f"RdaConsole failed with exit code {e.returncode}")
-        return 1
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    _extract_rda(
+        input_path,
+        output_dir,
+        filter_pattern,
+        rdaconsole_path,
+    )
+    log("Extraction complete", "success")
+    return 0

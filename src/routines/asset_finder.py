@@ -9,8 +9,6 @@ by its GUID and returns information about where it was found.
 # IMPORTS
 # ============================================================
 
-import argparse
-import logging
 from pathlib import Path
 from typing import Optional
 
@@ -19,16 +17,9 @@ from ..cache import (
     set_cached_asset,
     set_guid_not_found,
 )
-from ..config import load_config
-from ..utils import load_xml_file
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-logger = logging.getLogger(__name__)
-config = load_config()
-ASSETS_DIR = config["paths"]["assets_unpack_dir"]
+from ..config import get_path
+from ..log import log
+from ..utils import load_xml_file, CustomArgumentParser
 
 # ============================================================
 # SEARCH
@@ -77,9 +68,6 @@ def _populate_cache_for_file(xml_file: Path) -> None:
         set_cached_asset(guid, asset_data)
         count += 1
 
-    if count > 0:
-        logger.info(f"Populated cache with {count} assets from {xml_file.name}")
-
 
 def find_asset_by_guid(guid: str, assets_dir: Path) -> Optional[dict]:
     """
@@ -100,7 +88,6 @@ def find_asset_by_guid(guid: str, assets_dir: Path) -> Optional[dict]:
     if cached is not None:
         # If cached as "not found", return None to caller
         if cached.get("not_found", False):
-            logger.debug(f"GUID {guid} was previously searched and not found (cached)")
             return None
         # Otherwise it's a cached asset
         return cached
@@ -108,12 +95,10 @@ def find_asset_by_guid(guid: str, assets_dir: Path) -> Optional[dict]:
     assets_dir = Path(assets_dir)
 
     if not assets_dir.exists():
-        logger.error(f"Assets directory not found: {assets_dir}")
         return None
 
     # Iterate through all XML files in assets directory
     xml_files = sorted(assets_dir.glob("*.xml"))
-    logger.info(f"Searching for GUID {guid} in {len(xml_files)} asset files...")
 
     for xml_file in xml_files:
         root = load_xml_file(xml_file)
@@ -143,9 +128,6 @@ def find_asset_by_guid(guid: str, assets_dir: Path) -> Optional[dict]:
                         "name": name_elem.text if name_elem is not None else "Unknown",
                         "file": xml_file.name,
                     }
-                    logger.info(
-                        f"Found GUID {guid}: {result['name']} in {result['file']}"
-                    )
                     # Cache the result
                     set_cached_asset(guid, result)
 
@@ -154,7 +136,6 @@ def find_asset_by_guid(guid: str, assets_dir: Path) -> Optional[dict]:
 
                     return result
 
-    logger.warning(f"GUID {guid} not found in any asset file")
     # Cache the fact that this GUID was not found
     set_guid_not_found(guid)
     return None
@@ -179,7 +160,6 @@ def find_related_guids(guid: str, assets_dir: Path) -> list[dict]:
     # First, find the asset
     asset_info = find_asset_by_guid(guid, assets_dir)
     if asset_info is None:
-        logger.warning(f"Asset {guid} not found, cannot find related GUIDs")
         return []
 
     # Load the asset file
@@ -203,7 +183,6 @@ def find_related_guids(guid: str, assets_dir: Path) -> list[dict]:
                 break
 
     if target_asset is None:
-        logger.warning(f"Could not locate asset {guid} in file")
         return []
 
     # Extract all numeric values from the asset (potential GUID references)
@@ -237,29 +216,18 @@ def find_related_guids(guid: str, assets_dir: Path) -> list[dict]:
             if child.tag != "Standard":  # Skip Standard section
                 extract_numeric_values(child, child.tag)
 
-    logger.info(f"Found {len(related_guids)} related GUIDs for {guid}")
     return related_guids
 
 
 # ============================================================
-# MAIN
+# CLI
 # ============================================================
 
 
-def main(args: list[str] | None = None) -> int:
-    """
-    Main entry point for asset finder.
+def build_parser(parser: CustomArgumentParser) -> None:
+    """Build argument parser for asset_finder."""
+    assets_dir = get_path("assets_unpack_dir")
 
-    Args:
-        args: Command-line arguments:
-              -g GUID: GUID to search for
-
-    Returns:
-        Exit code (0 on success, 1 on error).
-    """
-    parser = argparse.ArgumentParser(
-        description="Find which template contains a given GUID"
-    )
     parser.add_argument(
         "-g",
         "--guid",
@@ -271,8 +239,8 @@ def main(args: list[str] | None = None) -> int:
         "-ad",
         "--assets-dir",
         type=Path,
-        default=ASSETS_DIR,
-        help=f"Path to assets directory (default: {ASSETS_DIR})",
+        default=assets_dir,
+        help=f"Path to assets directory (default: {assets_dir})",
     )
     parser.add_argument(
         "-r",
@@ -294,71 +262,58 @@ def main(args: list[str] | None = None) -> int:
         help="Output results as JSON",
     )
 
-    try:
-        parsed = parser.parse_args(args or [])
 
-        # Silence logger INFO if JSON output requested, but keep WARNING and ERROR
-        if parsed.json:
-            logger.setLevel(logging.WARNING)
+def run(parsed: CustomArgumentParser) -> int:
+    """
+    Main entry point for asset finder.
 
-        result = find_asset_by_guid(parsed.guid, parsed.assets_dir)
+    Args:
+        parsed: Parsed command-line arguments.
 
-        if result:
-            # Output as JSON if requested (or from --related flag)
-            if parsed.related or parsed.json:
-                import json
+    Returns:
+        Exit code (0 on success, 1 on error).
+    """
+    result = find_asset_by_guid(parsed.guid, parsed.assets_dir)
+    if result:
+        # Output as JSON if requested (or from --related flag)
+        if parsed.related or parsed.json:
+            import json
 
-                output = {"asset": result}
+            output = {"asset": result}
 
-                if parsed.related:
-                    related = find_related_guids(parsed.guid, parsed.assets_dir)
+            if parsed.related:
+                related = find_related_guids(parsed.guid, parsed.assets_dir)
 
-                    # Apply filter if provided
-                    if parsed.filter:
-                        import re
+                # Apply filter if provided
+                if parsed.filter:
+                    import re
 
-                        pattern = re.compile(parsed.filter, re.IGNORECASE)
-                        related = [
-                            ref
-                            for ref in related
-                            if pattern.search(ref["element_name"])
-                            or pattern.search(ref["context"])
-                        ]
+                    pattern = re.compile(parsed.filter, re.IGNORECASE)
+                    related = [
+                        ref
+                        for ref in related
+                        if pattern.search(ref["element_name"])
+                        or pattern.search(ref["context"])
+                    ]
 
-                    output["related"] = related
-                else:
-                    output["related"] = []
-
-                print(json.dumps(output))
+                output["related"] = related
             else:
-                print(f"\n✓ Found!")
-                print(f"  GUID:     {result['guid']}")
-                print(f"  Name:     {result['name']}")
-                print(f"  Template: {result['template']}")
-                print(f"  File:     {result['file']}\n")
+                output["related"] = []
 
-            return 0
+            print(json.dumps(output))
         else:
-            if parsed.json:
-                import json
+            print(f"\n✓ Found!")
+            print(f"  GUID:     {result['guid']}")
+            print(f"  Name:     {result['name']}")
+            print(f"  Template: {result['template']}")
+            print(f"  File:     {result['file']}\n")
 
-                print(json.dumps({"asset": None, "related": []}))
-            else:
-                print(f"\n✗ GUID {parsed.guid} not found\n")
-            return 1
-
-    except Exception as e:
-        logger.error(f"Error: {e}")
+        return 0
+    else:
         if parsed.json:
             import json
 
-            print(json.dumps({"error": str(e)}))
+            print(json.dumps({"asset": None, "related": []}))
         else:
-            print(f"Error: {e}")
+            print(f"\n✗ GUID {parsed.guid} not found\n")
         return 1
-
-
-if __name__ == "__main__":
-    import sys
-
-    sys.exit(main())
