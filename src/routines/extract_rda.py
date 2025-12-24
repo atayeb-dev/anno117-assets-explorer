@@ -12,12 +12,11 @@ Reference: https://github.com/anno-mods/RdaConsole
 # ============================================================
 
 import subprocess
-import sys
 from pathlib import Path
 
-from ..config import get_path
+from ..config import get_file_path, get_value_or_none
 from ..log import log
-from ..utils import select_file_gui, validate_file_exists, CustomArgumentParser
+from ..cli import CliArgumentParser
 
 # ============================================================
 # EXTRACTION
@@ -43,7 +42,6 @@ def _extract_rda(
         subprocess.CalledProcessError: If RdaConsole.exe fails.
         FileNotFoundError: If RdaConsole.exe is not found.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         str(rdaconsole_path),
         "extract",
@@ -56,8 +54,12 @@ def _extract_rda(
     if filter_pattern:
         cmd.extend(["--filter", filter_pattern])
 
-    log(f"Running: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
+    log(f"Running {rdaconsole_path}")
+    subprocess.run(
+        cmd,
+        check=True,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,  # required as rda console performs clear() in console
+    )
 
 
 # ============================================================
@@ -65,40 +67,39 @@ def _extract_rda(
 # ============================================================
 
 
-def build_parser(parser: CustomArgumentParser) -> None:
+def build_parser(parser: CliArgumentParser) -> None:
     """Build argument parser for extract_rda."""
 
-    rda_console_path = get_path("rda_console_exec")
-    unpacked_dir = get_path("unpacked_dir")
+    rda_console_file = get_file_path(f"rda_console_file")
+    unpack_dir = get_file_path("unpack_dir")
+    input_rda_file = get_file_path("input_rda_file")
+    filter_pattern = get_value_or_none("rda_filter_pattern")
 
     parser.add_argument(
         "-i",
         "--input",
         type=Path,
-        help="Path to the .rda file to extract",
+        default=input_rda_file,
     )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        default=unpacked_dir,
-        help=f"Output directory (default: {unpacked_dir})",
+        default=unpack_dir,
     )
     parser.add_argument(
         "--filter",
         type=str,
-        default="(assets\\.xml|templates\\.xml|properties.*\\.xml|texts.*\\.xml)$",
-        help="Optional regex pattern for rda extraction",
+        default=filter_pattern,
     )
     parser.add_argument(
-        "--rdaconsole-path",
+        "--rdaconsole",
         type=Path,
-        default=rda_console_path,
-        help=f"Path to RdaConsole.exe (default: {rda_console_path})",
+        default=rda_console_file,
     )
 
 
-def run(parsed: CustomArgumentParser) -> int:
+def run(parsed: CliArgumentParser) -> int:
     """
     Main entry point for RDA extraction.
 
@@ -109,38 +110,31 @@ def run(parsed: CustomArgumentParser) -> int:
         Exit code (0 on success, non-zero on failure).
     """
     # Validate RdaConsole availability
-    rdaconsole_path = parsed.rdaconsole_path
-    if not rdaconsole_path.exists():
-        log(f"RdaConsole.exe not found at: {rdaconsole_path}", "error")
-        return 1
-
-    # Determine input file
-    input_path = parsed.input
-    if not input_path:
-        selected_file = select_file_gui("Select RDA file to extract")
-        if not selected_file:
-            log("No input file selected", "error")
-            return 1
-        input_path = Path(selected_file)
+    rdaconsole_path = parsed.rdaconsole
+    if not rdaconsole_path.is_file():
+        raise FileNotFoundError(f"RdaConsole.exe not found at: {rdaconsole_path}")
 
     # Validate input file
-    if not input_path.exists():
-        log(f"RDA file not found: {input_path}", "error")
-        return 1
+    rda_file = parsed.input
+    if not rda_file.is_file():
+        raise FileNotFoundError(f"RDA file not found: {rda_file}")
 
     # Extract with options
     output_dir = parsed.output
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True, exist_ok=True)
+
     filter_pattern = parsed.filter
 
-    log(f"Extracting RDA: {input_path} → {output_dir}")
+    log(f"Extracting RDA: {rda_file} {{arr/}} {output_dir}")
     if filter_pattern:
         log(f"Filter regex: {filter_pattern}")
 
     _extract_rda(
-        input_path,
+        rda_file,
         output_dir,
         filter_pattern,
         rdaconsole_path,
     )
-    log("Extraction complete", "success")
+    log("{succ/Extraction complete}")
     return 0

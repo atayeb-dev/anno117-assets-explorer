@@ -1,5 +1,5 @@
 from ..cache import clear_cache, clear_not_found_cache, _get_cache, CACHE_FILE
-from ..utils import CustomArgumentParser
+from ..cli import CliArgumentParser
 from ..log import log
 
 # ============================================================
@@ -7,7 +7,7 @@ from ..log import log
 # ============================================================
 
 
-def build_parser(parser: CustomArgumentParser) -> None:
+def build_parser(parser: CliArgumentParser) -> None:
     """
     Build argument parser for cache manager.
 
@@ -31,7 +31,7 @@ def build_parser(parser: CustomArgumentParser) -> None:
     )
 
 
-def run(parsed: CustomArgumentParser) -> int:
+def run(parsed: CliArgumentParser) -> int:
     """
     Main entry point for cache manager.
 

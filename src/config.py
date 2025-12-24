@@ -16,31 +16,28 @@ Architecture:
 
 import json
 from pathlib import Path
-from .log import log
+from .log import log, pp_log
 
 # ============================================================
 # CONSTANTS
 # ============================================================
 
 DEFAULT_CONFIG_FILE = "config.json"
-# For tracking config file modifications
-# REQUIRED_CONFIG_STRUCTURE = {
-#     "paths": {
-#         "workdir": False,
-#         "unpacked_dir": False,
-#         "rda_console_exec": False,
-#         "assets_xml": False,
-#         "assets_unpack_dir": False,
-#         "gen_dir": False,
-#     }
-# }
+
+_GLOBAL_CONFIG = None
+_CUSTOM_CONFIG_FILE = None
 
 # ============================================================
 # GLOBAL CONFIG INSTANCE
 # ============================================================
 
-_GLOBAL_CONFIG = None
-_CUSTOM_CONFIG_PATH = None
+
+class ConfigPath(Path):
+    """Custom Path subclass for configuration paths."""
+
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls, *args, **kwargs)
+
 
 # ============================================================
 # LOAD
@@ -99,8 +96,8 @@ def load_global_config(custom_config_path: str | Path | None = None) -> dict:
     # Load custom config, should be here if specified.
     custom_config = {}
     if custom_config_path:
-        global _CUSTOM_CONFIG_PATH
-        _CUSTOM_CONFIG_PATH = custom_config_path
+        global _CUSTOM_CONFIG_FILE
+        _CUSTOM_CONFIG_FILE = custom_config_path
         custom_config_path = Path(custom_config_path)
         if not custom_config_path.exists():
             raise FileNotFoundError(
@@ -126,7 +123,7 @@ def reload_config(custom_config_path: str | None = None) -> None:
         config_path: Optional new custom path to config file.
     """
     load_global_config(
-        custom_config_path if custom_config_path else _CUSTOM_CONFIG_PATH
+        custom_config_path if custom_config_path else _CUSTOM_CONFIG_FILE
     )
 
 
@@ -136,18 +133,20 @@ def print_config_state() -> None:
         log("{err/Configuration unloaded}")
     else:
         log("{succ/Configuration loaded}")
-    if _CUSTOM_CONFIG_PATH:
-        log(f"{{succ/Custom configuration: {_CUSTOM_CONFIG_PATH}}}")
+    if _CUSTOM_CONFIG_FILE:
+        log(f"{{succ/Custom configuration: {_CUSTOM_CONFIG_FILE}}}")
 
 
-def print_config() -> None:
+def print_config(path: str | None = None) -> None:
     """Utility to print current global config for debugging."""
-    import pprint
-
     if _GLOBAL_CONFIG is None:
         print_config_state()
         return
-    pprint.pprint(_GLOBAL_CONFIG)
+    if not path:
+        pp_log(_GLOBAL_CONFIG)
+    else:
+        value = get_value_or_none(path)
+        pp_log({path: value})
 
 
 def unload_config() -> None:
@@ -156,7 +155,65 @@ def unload_config() -> None:
     _GLOBAL_CONFIG = None
 
 
-def get_path(key: str) -> Path:
+def _get_nested_dict(d: dict, path: str, default=None):
+    keys = path.split(".")
+    value = d
+    for key in keys:
+        if isinstance(value, dict):
+            value = value.get(key)
+        else:
+            return default
+    return value
+
+
+def _get_value_or_none(key: str, default=None, type="str") -> any | None:
+    """
+    Get a value from global configuration, or None if not found.
+
+    Args:
+        key: Key in global configuration dictionary.
+
+    Returns:
+        Value for the requested key, or None if not found.
+    """
+    if not _GLOBAL_CONFIG:
+        return None
+    config_value = _get_nested_dict(_GLOBAL_CONFIG, key, default=default)
+    if config_value is None:
+        config_value = _get_nested_dict(
+            _GLOBAL_CONFIG, key, default=default
+        )  # try global
+    return config_value
+
+
+def get_value_or_none(key: str, default=None, prefix="") -> any | None:
+    """
+    Get a value from global configuration, or None if not found.
+
+    Args:
+        key: Key in global configuration dictionary.
+
+    Returns:
+        Value for the requested key, or None if not found.
+    """
+    return _get_value_or_none(f"{prefix}{key}", default=default)
+
+
+def get_str_value(key: str, default="", prefix="") -> str:
+    str_value = _get_value_or_none(f"{prefix}{key}", default=default)
+    if str_value is None:
+        return ""
+    return str(str_value)
+
+
+def get_bool_value(key: str, default=False, prefix="") -> bool:
+    bool_value = _get_value_or_none(f"{prefix}{key}", default=default)
+    if bool_value is None:
+        return False
+    return bool(bool_value)
+
+
+def get_file_path(key: str, default=None, prefix="") -> ConfigPath:
     """
     Get a path from configuration.
     Args:
@@ -168,17 +225,7 @@ def get_path(key: str) -> Path:
     Raises:
         KeyError: If key not found in paths.
     """
-
-    if not _GLOBAL_CONFIG or key not in _GLOBAL_CONFIG.get("paths", {}):
-        return select_file(
-            f"Path '{key}' not found in configuration. Please select the file:"
-        )
-
-    return Path.cwd() / _GLOBAL_CONFIG["paths"][key]
-
-
-def select_file(title: str = "Select a file") -> str:
-    """Ask user to input file path."""
-    log(f"\n{title}")
-    filepath = input("Enter file path: ").strip()
-    return Path(filepath)
+    path_value = _get_value_or_none(f"{prefix}paths.{key}", default=default)
+    if path_value is None:
+        return default
+    return ConfigPath(Path.cwd() / path_value)

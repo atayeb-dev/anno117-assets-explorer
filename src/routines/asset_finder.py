@@ -17,7 +17,7 @@ from ..cache import (
     set_cached_asset,
     set_guid_not_found,
 )
-from ..config import get_path
+from ..config import get_file_path
 from ..log import log
 from ..utils import load_xml_file, CustomArgumentParser
 
@@ -226,7 +226,7 @@ def find_related_guids(guid: str, assets_dir: Path) -> list[dict]:
 
 def build_parser(parser: CustomArgumentParser) -> None:
     """Build argument parser for asset_finder."""
-    assets_dir = get_path("assets_unpack_dir")
+    assets_dir = get_file_path("assets_unpack_dir")
 
     parser.add_argument(
         "-g",

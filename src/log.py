@@ -1,8 +1,55 @@
 # ============================================================
 # ANSI Logging Utility
 # ============================================================
+from io import StringIO
+from pprint import pprint
+import random
 import re
 import sys
+from time import sleep
+
+
+indents = {
+    "err": lambda m: f"{ansi_text(' ✗ ', 'red', ansi_codes=[0])}{m}",
+    "err0": lambda m: f"{ansi_text('✗', 'red', ansi_codes=[0])}{m}",
+    "succ": lambda m: f"{ansi_text(' ✓ ', 'green', ansi_codes=[0])}{m}",
+    "succ0": lambda m: f"{ansi_text('✓', 'green', ansi_codes=[0])}{m}",
+    "arr": lambda m: f"{ansi_text(' → ', 'blue', ansi_codes=[1])}{m}",
+    "arr0": lambda m: f"{ansi_text('→', 'blue', ansi_codes=[1])}{m}",
+    "ind": lambda m: f"{ansi_text('  ' * int(m), ansi_codes=[0])}",
+}
+
+colors = {
+    "w": lambda m: ansi_text(m, "white"),
+    "b": lambda m: ansi_text(m, "blue"),
+    "c": lambda m: ansi_text(m, "cyan"),
+    "y": lambda m: ansi_text(m, "yellow"),
+    "r": lambda m: ansi_text(m, "red"),
+    "g": lambda m: ansi_text(m, "green"),
+}
+
+help = {
+    "hf": lambda m: ansi_text(m, "blue", ansi_codes=[1]),
+    "hfl": lambda m: ansi_text(m, "blue", ansi_codes=[3]),
+    "hv": lambda m: ansi_text(m, ansi_codes=[2]),
+    "hvl": lambda m: ansi_text(m, ansi_codes=[2, 3]),
+    "hur": lambda m: ansi_text(m, "yellow", ansi_codes=[1]),
+    "hu": lambda m: ansi_text(m, "yellow", ansi_codes=[0]),
+    "hul": lambda m: ansi_text(m, "yellow", ansi_codes=[3]),
+    "fn": lambda m: ansi_text(m, "blue", ansi_codes=[1]),
+    "fh": lambda m: ansi_text(m, "green", ansi_codes=[1]),
+}
+
+pprnt = {
+    "ppi0": lambda m: ansi_text(m, "green", ansi_codes=[1]),
+    "ppi1": lambda m: ansi_text(m, "cyan", ansi_codes=[1]),
+    "ppi2": lambda m: ansi_text(m, "cyan", ansi_codes=[2]),
+    "ppi3": lambda m: ansi_text(m, "cyan", ansi_codes=[2, 3]),
+    "ppl0": lambda m: ansi_text(m, "white", ansi_codes=[0]),
+    "ppl1": lambda m: ansi_text(m, "white", ansi_codes=[0]),
+    "ppl2": lambda m: ansi_text(m, "white", ansi_codes=[2]),
+    "ppl3": lambda m: ansi_text(m, "white", ansi_codes=[2, 3]),
+}
 
 
 def ansi_text(text: str, color: str = "default", ansi_codes: list[int] = [0]) -> str:
@@ -38,7 +85,9 @@ def ansi_text(text: str, color: str = "default", ansi_codes: list[int] = [0]) ->
     return f"{ansi_start}{text}{ansi_end}"
 
 
-def format_styled_text(text: str, styles: dict = None) -> str:
+def format_styled_text(
+    text: str, styles: dict = help | indents | colors | pprnt
+) -> str:
     """
     Format text with custom inline style tags.
 
@@ -70,47 +119,108 @@ def format_styled_text(text: str, styles: dict = None) -> str:
     return result
 
 
-styles = {
-    "hf": lambda x: ansi_text(x, "blue", ansi_codes=[1]),
-    "hfl": lambda x: ansi_text(x, "blue", ansi_codes=[3]),
-    "hv": lambda x: ansi_text(x, ansi_codes=[2]),
-    "hvl": lambda m: ansi_text(m, ansi_codes=[2, 3]),
-    "hur": lambda x: ansi_text(x, "yellow", ansi_codes=[1]),
-    "hu": lambda x: ansi_text(x, "yellow", ansi_codes=[0]),
-    "hul": lambda x: ansi_text(x, "yellow", ansi_codes=[3]),
-    "fn": lambda m: ansi_text(m, "blue", ansi_codes=[1]),
-    "fh": lambda m: ansi_text(m, "green", ansi_codes=[1]),
-    "b": lambda x: ansi_text(x, "blue"),
-    "c": lambda x: ansi_text(x, "cyan"),
-    "y": lambda x: ansi_text(x, "yellow"),
-    "r": lambda x: ansi_text(x, "red"),
-    "g": lambda x: ansi_text(x, "green"),
-    "err": lambda m: f"{ansi_text('✗', 'red', ansi_codes=[1])} {m}",
-    "succ": lambda m: f"{ansi_text('✓', 'green', ansi_codes=[1])} {m}",
-}
+def clean(lines: int = 1):
+    while lines > 0:
+        lines -= 1
+        sys.stdout.write("\033[F\033[K")  # Remonte + efface la ligne
+        sys.stdout.flush()
 
 
-def log(message: str, stream=False) -> None:
+def pp_log(data, stream: bool = False):
+    """
+    Pretty-print data using the logging utility.
+
+    Args:
+        data: Data to pretty-print.
+    """
+    import pprint
+
+    pretty_text = pprint.pformat(data)
+    buffer = StringIO()
+    indentl = lambda i: f"{{ind/{i}}}"
+
+    pretty_text = re.sub(r"\s+", "", pretty_text)
+    indentcodes = sorted([f"{k}/" for k in pprnt if k.startswith("ppi")])
+    leafcodes = sorted([f"{k}/" for k in pprnt if k.startswith("ppl")])
+    sc = False
+    vw = False
+    indent = 0
+    for char in pretty_text[1:-1]:
+        ppi = indentcodes[min(indent, len(indentcodes) - 1)]
+        if char == "'":
+            if not vw:
+                if not sc:
+                    buffer.write(f"{{{ppi}[")
+                    sc = True
+                else:
+                    buffer.write(f"]}}")
+                    sc = False
+            else:
+                buffer.write(char)
+        elif char == ":":
+            vw = True
+            ppl = leafcodes[min(indent, len(leafcodes) - 1)]
+            buffer.write(f"{{arr/}}{{{ppl}")
+        elif char == "{" or char == "[":
+            indent += 1
+            if vw:
+                buffer.write("}")
+            vw = False
+            buffer.write("\n")
+            buffer.write(indentl(indent))
+        elif char == "}" or char == "]":
+            indent -= 1
+            buffer.write(indentl(indent))
+            buffer.write("")
+        elif char == ",":
+            if vw:
+                buffer.write("}")
+            vw = False
+            buffer.write("\n")
+            buffer.write(indentl(indent))
+        else:
+            buffer.write(char)
+        buffer.flush()
+
+    if vw:
+        buffer.write("}")
+    pretty_text = buffer.getvalue()
+
+    log(pretty_text, stream)
+
+
+def log(message: str = "", stream: bool = False, nl: bool = True) -> None:
     """
     Log a message with styled text formatting and streaming.
     Args:
         message: Message to log.
         stream: If True, stream output character by character.
+        nl: If True, print a newline at the end.
     """
-    message = format_styled_text(message, styles=styles)
+    message = format_styled_text(message)
 
     if stream:
+        loops = 0
+        mod = 5
         # Stream mode: write character by character for visual effect
         for char in message:
             sys.stdout.write(char)
-            from time import sleep
-
-            sleep(0.01)
+            if loops % mod == 0:
+                loops = 0
+                mod = random.randint(4, 7)
+                sleep(
+                    0.03 + random.random() * 0.06
+                )  # Random delay between 30 and 60 ms
+            loops += 1
+            sleep(random.random() * 0.02)  # Random delay between 0 and 20 ms
             sys.stdout.flush()
-        print()  # Newline at the end
+
     else:
         # Normal mode
-        print(message)
+        sys.stdout.write(message)
+        sys.stdout.flush()
+    if nl:
+        print()  # Newline at the end
 
 
 def log_args(args: dict):

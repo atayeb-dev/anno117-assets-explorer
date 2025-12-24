@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..cache import get_cached_asset, set_cached_asset
-from ..config import get_path
+from ..config import get_file_path
 from ..log import log
 from ..utils import (
     sanitize_filename,
@@ -175,8 +175,8 @@ def _write_json_mapping(
 
 def build_parser(parser: CustomArgumentParser) -> None:
     """Build argument parser for assets_mapper."""
-    assets_dir = get_path("assets_unpack_dir")
-    gen_dir = get_path("gen_dir")
+    assets_dir = get_file_path("assets_unpack_dir")
+    gen_dir = get_file_path("gen_dir")
 
     parser.add_argument(
         "-t",

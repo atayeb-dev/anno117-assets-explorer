@@ -13,19 +13,6 @@ from fnmatch import fnmatch
 from pathlib import Path
 from .log import log
 
-# ============================================================
-# ARGUMENT PARSING
-# ============================================================
-
-import argparse
-
-
-class CustomArgumentParser(argparse.ArgumentParser):
-    """ArgumentParser that raises ValueError instead of exiting."""
-
-    def error(self, message):
-        raise Exception(message)
-
 
 # ============================================================
 # JSON & SERIALIZATION
@@ -57,6 +44,8 @@ def make_json_serializable(obj):
 # ============================================================
 # FILE OPERATIONS
 # ============================================================
+
+from pathlib import Path
 
 
 def sanitize_filename(name: str, strict: bool = False) -> str:

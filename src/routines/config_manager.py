@@ -1,5 +1,5 @@
-from src.utils import CustomArgumentParser
-from src.log import log
+from os import path
+from src.cli import CliArgumentParser
 from ..config import reload_config, print_config, unload_config, print_config_state
 
 # ============================================================
@@ -7,7 +7,7 @@ from ..config import reload_config, print_config, unload_config, print_config_st
 # ============================================================
 
 
-def build_parser(parser: CustomArgumentParser):
+def build_parser(parser: CliArgumentParser) -> None:
     """
     Build argument parser for config manager.
 
@@ -15,29 +15,25 @@ def build_parser(parser: CustomArgumentParser):
         parser: CustomArgumentParser instance to configure.
     """
     parser.add_argument(
-        "-r",
-        "--reload",
-        action="store_true",
-        default=None,
-    )
-    parser.add_argument(
-        "-s",
-        "--state",
+        long="reload",
         action="store_true",
     )
     parser.add_argument(
-        "-p",
-        "--print",
+        long="status",
         action="store_true",
     )
     parser.add_argument(
-        "-u",
-        "--unload",
+        long="print",
+        nargs="?",
+        const=True,
+    )
+    parser.add_argument(
+        long="unload",
         action="store_true",
     )
 
 
-def run(parsed: CustomArgumentParser) -> int:
+def run(parser: CliArgumentParser) -> int:
     """
     Main entry point for cache manager.
 
@@ -50,10 +46,19 @@ def run(parsed: CustomArgumentParser) -> int:
     Returns:
         Exit code (0 on success, 1 on error).
     """
+
+    parsed = parser.module_parsed
+
     if parsed.reload:
         reload_config()
     if parsed.print:
-        print_config()
+
+        prints = parser.module_arg("print")
+        if isinstance(prints, list) and len(prints) > 0:
+            for path in prints:
+                print_config(path)
+        else:
+            print_config()
     if parsed.unload:
         unload_config()
 

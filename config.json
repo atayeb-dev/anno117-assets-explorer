@@ -1,8 +1,21 @@
 {
     "paths": {
-        "workdir": ".",
+        "assets_file": "unpacked/data/base/config/export/assets.xml",
         "unpack_dir": "unpacked",
-        "rda_console_exec": "rda_console/RdaConsole.exe",
+        "rda_console_file": "rda_console/RdaConsole.exe",
         "gen_dir": "gen"
-    }
+    },
+    "cli": {
+        "live": true,
+        "gui_file_chooser": true
+    },
+    "config": {
+        "deep": {
+            "test": 123,
+            "nested": {
+                "value": "example"
+            }
+        }
+    },
+    "rda_filter_pattern": "(assets\\.xml|templates\\.xml|properties.*\\.xml|texts.*\\.xml)$"
 }

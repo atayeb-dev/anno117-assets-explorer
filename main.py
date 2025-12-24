@@ -16,13 +16,17 @@ Architecture:
 # ============================================================
 
 import argparse
-from ast import mod
+from email.mime import message
 import importlib
 import sys
 from pathlib import Path
-from src.config import load_global_config, print_config_state
-from src.log import log
-from src.utils import CustomArgumentParser
+from src.config import (
+    load_global_config,
+    print_config_state,
+)
+from src.log import clean, log, pp_log
+from src.cli import CliArgumentParser
+from tkinter import Tk, filedialog
 
 # ============================================================
 # CONSTANTS
@@ -39,14 +43,22 @@ class LaunchError(Exception):
 
         self.message = "\
 \n==\n\
-{fh/atayeb Assets Explorer}\n\
-  - Features:\n\
-    - Interactive CLI.\n\
-Type {hu/'-h'} for help.\n\
-If my work made your day better, consider backing its creator.\n\
+{fh/atayeb Anno 117 Assets Explorer}\n\
+ {hf/Modular routines} for {r/anno assets}: unpacking/searching/dumping/mapping.\n\
+   - Features:\n\
+    - Interactive CLI\n\
+    - ...\n\
+{fh/Launch} with {hu/'--cli'} for command-line interface.\n\
+\n\033[01m©\033[0m atayeb 2025\n\
+{hvl/If my work made your day better, consider backing its creator.}\n\
 ==\n\
 "
         super().__init__(self.message)
+
+
+# ============================================================
+# FILE SELECTION
+# ============================================================
 
 
 # ============================================================
@@ -77,7 +89,7 @@ def _interactive_prompt() -> int:
 
             # Handle exit
             if cmd.lower() in ("exit", "bye", "quit"):
-                log("{succ/Goodbye!}")
+                log("{succ/}Goodbye!")
                 return 0
 
             # Handle help
@@ -101,16 +113,16 @@ def _interactive_prompt() -> int:
             result = _invoke_module(module_name, module_args)
 
             if result != 0:
-                log(f"{{err/Command failed with exit code {result}}}\n")
+                log(f"{{err/}}Command failed with exit code {result}\n")
             else:
-                log(f"{{succ/Command executed successfully}}\n")
+                log(f"{{succ/}}Command executed successfully\n")
 
         except ModuleNotFoundError:
-            log(f"{{err/Module not found: {module_name}}}\n")
+            log(f"{{err/}}Module not found: {module_name}\n")
         except KeyboardInterrupt:
-            log("\n{err/Interrupted!}")
+            log(f"\n{{err/}}Interrupted!")
         except Exception as e:
-            log(f"{{err/{e}}}\n")
+            log(f"{{err/}}{e}\n")
 
 
 def _invoke_module(module_name: str, module_args: list[str]) -> int | None:
@@ -151,72 +163,58 @@ def _invoke_module(module_name: str, module_args: list[str]) -> int | None:
         log(f"{{err/No entry point found in {module_name}}}")
         return None
 
-    # Print help if requested
-    if "--help" in module_args or "-h" in module_args:
+    parser = CliArgumentParser(mod, module_args=module_args)
+
+    help_run = parser.cli("help")
+    instant_run = parser.cli("instant")
+    live_run = parser.cli("live")
+    silent_run = parser.cli("silent")
+
+    log("==============================")
+    log(f"Invoking module: {module_name}:")
+    if parser.cli("print_args"):
+        pp_log(
+            {
+                "cli": vars(parser.cli_parsed),
+                "module": vars(parser.module_parsed),
+            }
+        )
+
+    if help_run:
         if not hasattr(mod, "help"):
-            log("{err/{r/Nothing can help you now...}}", stream=True)
+            log("{err/}Nothing can help you now...}", stream=True)
             return 0
         else:
-            parser = CustomArgumentParser(add_help=False)
-            parser.add_argument(
-                "--help",
-                "-h",
-                action="store_true",
-            )
-            parser.add_argument(
-                "--instant",
-                "-i",
-                action="store_true",
-            )
-            for arg in module_args:
-                if arg not in ("-i", "--instant", "-h", "--help"):
-                    module_args.remove(arg)
-            parsed = parser.parse_args(module_args)
+            log("{arr/}Asked for help")
             help_func = getattr(mod, "help")
             help_text = ""
             try:
-                help_text = help_func(parsed)
+                help_text = help_func(module_args)
             except Exception:
                 help_text = help_func()
-            log(help_text, stream=not parsed.instant)
+            log(help_text, stream=not instant_run)
             return 0
     else:
         try:
-            parser = CustomArgumentParser(add_help=False)
-            getattr(mod, "build_parser")(parser)
-            parsed = parser.parse_args(
-                [arg for arg in module_args if arg not in ("-h", "--help")]
-            )
-            return entry_point(parsed)
+            out = entry_point(parser)
+            if isinstance(out, int):
+                return out
+            elif isinstance(out, tuple):
+                if live_run and not silent_run:
+                    log(f"{{arr/}}{out[0]}")
+                return out[1]
+
         except Exception as e:
-            log(f"{{err/Error in module {{fn/{module_short_name}}}: {e}}}")
+            log(f"{{err/}}Error in module {{fn/{module_short_name}}}: {e}")
             return 1
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """
-    Build argument parser for the dispatcher.
+class MainArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that raises exceptions instead of exiting."""
 
-    Returns:
-        Configured ArgumentParser instance.
-    """
-    parser = argparse.ArgumentParser(
-        description="Atayeb Assets Explorer - Asset extraction and management utility",
-    )
-    parser.add_argument(
-        "-cfg",
-        "--config",
-        type=Path,
-        default=None,
-        help="Custom config file (supports 'partial: true' for merging)",
-    )
-    parser.add_argument(
-        "-c",
-        "--cli",
-        nargs=argparse.REMAINDER,
-        help="Run CLI: --cli MODULE [ARGS...]",
-    )
-    return parser
+    def error(self, message):
+        """Raise exception instead of exiting."""
+        raise Exception(message)
 
 
 def main(args: list[str] | None = None) -> int:
@@ -232,13 +230,21 @@ def main(args: list[str] | None = None) -> int:
     Returns:
         Exit code (0 on success, non-zero on failure).
     """
-    parser = _build_parser()
-    parsed = parser.parse_args(args)
+
+    parser = MainArgumentParser(argparse.ArgumentParser, add_help=False)
+    parser.add_argument("--cli", nargs=argparse.REMAINDER)
+    parser.add_argument("-h", "--help", action="store_true")
 
     # Load configuration
-    load_global_config(parsed.config)
+    # load_global_config(parsed.config)
+    load_global_config()
 
     try:
+        parsed = parser.parse_args(args)
+
+        if parsed.help:
+            raise LaunchError()
+
         if parsed.cli is not None:
             if len(parsed.cli) == 0:
                 return _interactive_prompt()
@@ -253,10 +259,10 @@ def main(args: list[str] | None = None) -> int:
             raise LaunchError()
 
     except LaunchError as e:
-        log(f"{e}")
+        log(f"{e}", stream=True)
         return 1
     except Exception as e:
-        log(f"Uncaught exception: {e}", "error")
+        log(f"{{err/{e}}}")
         return 1
 
 
