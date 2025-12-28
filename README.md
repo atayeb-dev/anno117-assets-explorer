@@ -6,6 +6,9 @@ If my work made your day better, consider [backing](https://ko-fi.com/atayeb) it
 
 **Version:** 0.2 | **Python:** 3.10+ | **Dependencies:** None (Standard Library only)
 
+## WIP.
+Not in a working state.
+
 ## Table of Contents
 
 - [Features](#features)
