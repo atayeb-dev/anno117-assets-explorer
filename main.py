@@ -201,18 +201,34 @@ def unit_test():
         "flush_rate": [15, 20],
         "styles": {
             "str": "cw;it;da",
+            "sep": "cw",
         },
     }
     logger_config.reload(
         config_dict=config_dict,
         trust="dict",
     )
-    logger.print("Testing logger: ", Config.get().create("test").get())
+    Config.get().create("test").get()
+    logger.prompt(
+        "Updated logger config, testing object print: ",
+    )
+    logger.prompt(
+        Config.get("test").get(),
+    )
     logger_config.reload()
-    logger.print(
-        "Reverted logger configuration: ",
-        Config.get("logger")._config_dict,
-        force_inline=lambda k: "styles" in k,
+    key = ""
+    test_array = None
+    for k, v in Config.get("test").get().items():
+        if isinstance(v, list) and (
+            test_array is None or len(str(v)) < len(str(test_array))
+        ):
+            test_array = v
+            key = k
+    logger.success(
+        "Reverted logger config, testing array print: ",
+        {key: test_array},
+        force_inline=lambda k: True,
+        compact=True,
     )
 
 
@@ -238,9 +254,13 @@ def main(args: list[str] | None = None) -> int:
     parser.add_argument("--cli", nargs=argparse.REMAINDER)
     parser.add_argument("-h", "--help", action="store_true")
 
+    # tests
     if "--unit-test" in sys.argv:
         unit_test()
         sys.argv.remove("--unit-test")
+    if "--kraken" in sys.argv:
+        Logger.get().print("/;__kraken/;/ ")
+        sys.argv.remove("--kraken")
 
     Config.get("logger").merge()
     Logger.get().print(

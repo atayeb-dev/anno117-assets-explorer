@@ -52,7 +52,7 @@ _ansi_pattern = (
 )
 # Specials: /;pattern/args;/
 _specials = {
-    "__kraken/;/": lambda *args: f"/;__kraken// /;__kraken//",
+    "__kraken/;/": lambda *args: f"/;__kraken/--;/;__kraken/--;/;/",
     "_repeat/c;i;/": lambda *args: f"{args[0]*max(1,int(args[1]))}",
     "_cross/s;;/": lambda *args: f"✗" if not args[0] else f"/;{';'.join(args)}/✗/;",
     "_check/s;;/": lambda *args: f"✓" if not args[0] else f"/;{';'.join(args)}/✓/;",
@@ -199,7 +199,7 @@ class Logger:
         self.print(*args, **kwargs)
 
     def prompt(self, *args, **kwargs) -> None:
-        args = [f"/;cb//;prt//;r/", *args]
+        args = [f"/;_arrow/cb;bo;/ ", *args]
         self.print(*args, **kwargs)
 
     def debug(self, *args, **kwargs) -> None:
@@ -374,16 +374,18 @@ class Logger:
                     continue
                 remaining = arg
                 security_limit = len(remaining) + 10000
+                loops = 0
                 while remaining:
+                    loops += 1
                     # Mange ANSI patterns on the fly
                     lookahead = remaining[0:2]
                     if lookahead == _ANSI_MARK:
                         ansi = _detect_ansi_pattern(remaining)
                         remaining = ansi[1] + remaining[len(ansi[0]) :]
                         # Do not let the kraken grow...
-                        if len(remaining) > security_limit:
+                        if loops > security_limit:
                             raise RuntimeError(
-                                f"Pattern recursion limit exceeded. You may have an overflowing recursive pattern!"
+                                f"Pattern recursion limit exceeded. You may have an kraken growing in {remaining[0:100]}!"
                             )
                         # Continue to provide recursive patterns
                         continue
