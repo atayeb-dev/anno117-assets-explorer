@@ -23,7 +23,7 @@ from src.config import (
     print_config_state,
 )
 import src.engine.config as Config
-from src.engine.logger import get as Logger, init
+import src.engine.logger as Logger
 from src.cli import CliArgumentParser
 
 
@@ -196,7 +196,7 @@ class MainArgumentParser(argparse.ArgumentParser):
 
 def unit_test():
     logger_config = Config.get("logger")
-    logger = Logger()
+    logger = Logger.get()
     config_dict = {
         "flush_rate": [15, 20],
         "styles": {
@@ -231,7 +231,7 @@ def main(args: list[str] | None = None) -> int:
     """
     global _current_module
     _current_module = "main"
-    init()
+    Logger.init()
     Config.init()
 
     parser = MainArgumentParser(argparse.ArgumentParser, add_help=False)
@@ -243,7 +243,7 @@ def main(args: list[str] | None = None) -> int:
         sys.argv.remove("--unit-test")
 
     Config.get("logger").merge()
-    Logger().print(
+    Logger.get().print(
         Config.get().get(),
         force_inline=lambda k: "logger.styles" in k,
     )
@@ -271,7 +271,7 @@ def main(args: list[str] | None = None) -> int:
             raise LaunchError()
 
     except LaunchError as e:
-        logger = Logger(
+        logger = Logger.get(
             "special",
             create_config_dict={
                 "animate": True,
