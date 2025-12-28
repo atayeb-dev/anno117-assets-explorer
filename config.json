@@ -14,7 +14,8 @@
             "arri": "cb;da",
             "str": "cw;it",
             "bool": "cc",
-            "num": "cb"
+            "num": "cb",
+            "dbg": "cm"
         }
     }
 }

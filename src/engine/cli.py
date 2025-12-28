@@ -9,10 +9,10 @@ Provides a custom ArgumentParser that raises exceptions instead of exiting.
 # ============================================================
 
 import argparse
+import config as Config
+import logger as Logger
 from pathlib import Path
 from types import ModuleType
-from src.config import get_file_path, get_value_or_none
-from .log import clean, log, pp_log
 from tkinter import Tk, filedialog
 
 
@@ -46,7 +46,7 @@ def select_file(
         )
 
     if get_bool_value("cli.gui_file_chooser"):
-        log(f"{{arr/}}Using GUI file chooser for: {key}")
+        Logger.get().prompt(f"Using GUI file chooser for: {key}")
         file = _select_file_gui(key)
         if file == "":
             file = default

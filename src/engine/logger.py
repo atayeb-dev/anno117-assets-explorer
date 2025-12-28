@@ -51,16 +51,17 @@ _ansi_pattern = (
     lambda tag: f"{_ANSI_MARK}{tag}{_S_END_MARK if tag.split('/')[0] in _s_keys_matches.keys() else _ANSI_MARK[0]}"
 )
 # Specials: /;pattern/args;/
+# https://www.compart.com/en/unicode/
 _specials = {
     "__kraken/;/": lambda *args: f"/;__kraken/--;/;__kraken/--;/;/",
     "_repeat/c;i;/": lambda *args: f"{args[0]*max(1,int(args[1]))}",
     "_cross/s;;/": lambda *args: f"✗" if not args[0] else f"/;{';'.join(args)}/✗/;",
     "_check/s;;/": lambda *args: f"✓" if not args[0] else f"/;{';'.join(args)}/✓/;",
     "_arrow/s;;/": lambda *args: "→" if not args[0] else f"/;{';'.join(args)}/→/;",
-    "_farrow/s;;/": lambda *args: f"↳",
+    "_wrench/s;;/": lambda *args: "🛠" if not args[0] else f"/;{';'.join(args)}/🛠/;",
 }
 _s_keys_matches = dict([(key.split("/")[0], val) for key, val in _specials.items()])
-_ansi_text = lambda codes: f"\033[{';'.join(str(c) for c in codes)}m"
+_ansi_text = lambda codes: f"\x1b[{';'.join(str(c) for c in codes)}m"
 
 
 def _detect_ansi_pattern(string: str) -> Tuple[str, str]:
@@ -149,6 +150,7 @@ _default_config = {
         "str": "cw;it",
         "bool": "cc",
         "num": "cb",
+        "dbg": "cm",
     },
 }
 
@@ -200,18 +202,17 @@ class Logger:
 
     def prompt(self, *args, **kwargs) -> None:
         args = [f"/;_arrow/cb;bo;/ ", *args]
-        self.print(*args, **kwargs)
+        self.write(*args, **kwargs)
 
     def debug(self, *args, **kwargs) -> None:
-        args = [f"/;cy//;dbg//;r/", *args]
-        self.print(*args, **kwargs)
+        args = [f"/;{self._decorator('dbg')}//;_wrench/;/ ", *args, "/;"]
+        self.write(*args, **kwargs)
 
-    def clean_lines(self, instant=True, lines: int = 1):
+    def clean_lines(self, lines: int = 1):
         while lines > 0:
             lines -= 1
-            self._stream.write("\033[F\033[K")
-            if instant:
-                self._stream.flush()
+            self._stream.write("\x1b[F\x1b[K")
+        self._stream.flush()
 
     _safe_get_config = lambda self, key: (
         glom(self._config_dict, key) if self._config is None else self._config.get(key)

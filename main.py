@@ -209,12 +209,13 @@ def unit_test():
         trust="dict",
     )
     Config.get().create("test").get()
-    logger.prompt(
-        "Updated logger config, testing object print: ",
+    logger.success(
+        "Updated logger config, testing object print:",
     )
     logger.prompt(
         Config.get("test").get(),
     )
+    logger.print()
     logger_config.reload()
     key = ""
     test_array = None
@@ -225,11 +226,17 @@ def unit_test():
             test_array = v
             key = k
     logger.success(
-        "Reverted logger config, testing array print: ",
+        "Reverted logger config, testing print: ",
         {key: test_array},
         force_inline=lambda k: True,
         compact=True,
     )
+    logger.error("This is a test error message.")
+    logger.success("This is a test success message.")
+    logger.prompt("This is a test prompt message.")
+    logger.print()
+    logger.debug("This is a test debug message.")
+    logger.print()
 
 
 def main(args: list[str] | None = None) -> int:
