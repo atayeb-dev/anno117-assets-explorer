@@ -1,126 +1,20 @@
 {
-    "test": {
-        "some_simple_array": [
-            1,
-            "Heello, World!",
-            [
-                1,
-                2,
-                3
-            ],
-            {
-                "an": "object",
-                "with": "properties"
-            },
-            5,
-            6
-        ],
-        "some_array": [
-            0,
-            "a string : that describes something",
-            true,
-            [
-                1,
-                2,
-                3,
-                {
-                    "deeply_nested_object": {
-                        "key": "value"
-                    }
-                }
-            ],
-            {
-                "nested_object_in_array": {
-                    "inner_key": "inner_value"
-                }
-            },
-            32.1564684684684651351351468798798765132154,
-            [
-                {
-                    "an": "object",
-                    "other": "object"
-                },
-                {
-                    "an": "object",
-                    "other": "object"
-                },
-                {
-                    "an": "object",
-                    "other": "object"
-                },
-                {
-                    "an": "object",
-                    "other": "object"
-                },
-                {
-                    "an": "object"
-                },
-                {
-                    "an": "object"
-                },
-                {
-                    "an": "object"
-                }
-            ]
-        ],
-        "some_string": "unpacked",
-        "some_object": {
-            "with_value": true,
-            "with_array": [
-                "rda_console/RdaConsole.exe",
-                "rda_console/RdaConsole.exe"
-            ],
-            "with_nested_object": {
-                "nested_key": "nested_value",
-                "with_nested_object": {
-                    "nested_key": "nested_value",
-                    "with_array": [
-                        "rda_console/RdaConsole.exe",
-                        "rda_console/RdaConsole.exe"
-                    ]
-                }
-            }
-        },
-        "some_array_of_objects": [
-            {
-                "name": "object1",
-                "value": 123
-            },
-            {
-                "name": "object2",
-                "value": [
-                    "(assets\\.xml|templates\\.xml|properties.*\\.xml|texts.*\\.xml)$",
-                    "(assets\\.xml|templates\\.xml|properties.*\\.xml|texts.*\\.xml)$",
-                    "(assets\\.xml|templates\\.xml|properties.*\\.xml|texts.*\\.xml)$"
-                ],
-                "nested": {
-                    "a": "b"
-                }
-            }
-        ]
-    },
-    "paths": {
-        "assets_file": "unpacked/data/base/config/export/assets.xml",
-        "unpack_dir": "unpacked",
-        "rda_console_file": "rda_console/RdaConsole.exe",
-        "gen_dir": "gen"
-    },
     "logger": {
-        "animate": false,
-        "slow_mode": false,
+        "animate": true,
         "flush_rate": [
             5,
             15
-        ]
-    },
-    "cli": {
-        "live": true,
-        "gui_file_chooser": true
-    },
-    "rda_filter_pattern": "(assets\\.xml|templates\\.xml|properties.*\\.xml|texts.*\\.xml)$",
-    "inline_array_print_test": [
-        "a",
-        true,
-        123
-    ]
+        ],
+        "strict_logging": false,
+        "max_inline": 120,
+        "styles": {
+            "sep": "cw;da",
+            "obji": "cb;da",
+            "objk": "cg;bo",
+            "arri": "cb;da",
+            "str": "cw;it",
+            "bool": "cc",
+            "num": "cb"
+        }
+    }
 }

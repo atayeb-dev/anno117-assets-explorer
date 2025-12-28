@@ -22,7 +22,7 @@ from src.config import (
     # load_global_config,
     print_config_state,
 )
-from src.engine.config import init_config, get_config as Config
+import src.engine.config as Config
 from src.engine.logger import get_logger as Logger, init_logging
 from src.cli import CliArgumentParser
 
@@ -194,6 +194,28 @@ class MainArgumentParser(argparse.ArgumentParser):
         raise Exception(message)
 
 
+def unit_test():
+    logger_config = Config.get("logger")
+    logger = Logger()
+    config_dict = {
+        "flush_rate": [15, 20],
+        "styles": {
+            "str": "cw;it;da",
+        },
+    }
+    logger_config.reload(
+        config_dict=config_dict,
+        trust="dict",
+    )
+    logger.print("Testing logger: ", Config.get().create("test").get())
+    logger_config.reload()
+    logger.print(
+        "Reverted logger configuration: ",
+        Config.get("logger")._config_dict,
+        force_inline=lambda k: "styles" in k,
+    )
+
+
 def main(args: list[str] | None = None) -> int:
     """
     Main dispatcher entry point.
@@ -210,37 +232,23 @@ def main(args: list[str] | None = None) -> int:
     global _current_module
     _current_module = "main"
     init_logging()
-    init_config()
+    Config.init()
 
     parser = MainArgumentParser(argparse.ArgumentParser, add_help=False)
     parser.add_argument("--cli", nargs=argparse.REMAINDER)
     parser.add_argument("-h", "--help", action="store_true")
-    # load_global_config()
 
-    # logger = Logger(
-    #     "test_fast_track_override",
-    #     config_dict={"animate": True, "flush_rate": [10, 20]},
-    # )
-    # # logger.print(Config()._config_dict)
-    # logger = Logger(
-    #     "default-from-config-globals",
-    # )
-    # logger.print(Config("default-from-config-globals")._config_dict)
+    if "--unit-test" in sys.argv:
+        unit_test()
+        sys.argv.remove("--unit-test")
 
-    # logger = Logger("logger", config_dict={"animate": True, "flush_rate": (10, 10)})
-    # logger = Logger()
-    # logger.print(
-    #     "this is a test log ", logger._config._config, instant=True, force_inline=True
-    # )
-    # logger.print("With unexisting", _global_config.get("test_array"), instant=True)
-    # logger.print(
-    #     "And simple array ",
-    #     _global_config.get("test.some_simple_array"),
-    #     instant=True,
-    # )
-    # print_config(Logger())
-
-    # logger.print("/;__kraken/;/ ")
+    Config.get("logger").merge()
+    Logger().print(
+        Config.get().get(),
+        force_inline=lambda k: "logger.styles" in k,
+    )
+    Config.get().dump()
+    Config.get("logger").dump()
 
     try:
         parsed = parser.parse_args(args)
@@ -267,8 +275,7 @@ def main(args: list[str] | None = None) -> int:
             "special",
             create_config_dict={
                 "animate": True,
-                "slow_mode": True,
-                "flush_rate": [5, 9],
+                "flush_rate": [1, 3],
             },
         )
         logger.write(f"{e}")

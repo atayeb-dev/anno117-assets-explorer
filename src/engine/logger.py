@@ -7,7 +7,6 @@ import re
 import sys
 from time import sleep
 from typing import TextIO, Tuple
-import pprint
 from glom import glom
 
 ANSI_CODES = {
@@ -55,7 +54,7 @@ _ansi_pattern = (
 _specials = {
     "__kraken/;/": lambda *args: f"/;__kraken// /;__kraken//",
     "_repeat/c;i;/": lambda *args: f"{args[0]*max(1,int(args[1]))}",
-    "_cross/s;;/": lambda *args: f"✗",
+    "_cross/s;;/": lambda *args: f"✗" if not args[0] else f"/;{';'.join(args)}/✗/;",
     "_check/s;;/": lambda *args: f"✓" if not args[0] else f"/;{';'.join(args)}/✓/;",
     "_arrow/s;;/": lambda *args: "→" if not args[0] else f"/;{';'.join(args)}/→/;",
     "_farrow/s;;/": lambda *args: f"↳",
@@ -139,9 +138,9 @@ def _detect_ansi_pattern(string: str) -> Tuple[str, str]:
 
 _default_config = {
     "animate": False,
-    "slow_mode": False,
-    "flush_rate": [0, 0],
+    "flush_rate": [5, 15],
     "strict_logging": False,
+    "max_inline": 120,
     "styles": {
         "sep": "cw;da",
         "obji": "cb;da",
@@ -156,13 +155,6 @@ _default_config = {
 
 class Logger:
 
-    _pprint = lambda self, v: re.sub(r"[\s']+", "", pprint.pformat(v, compact=True))
-    _lpprint = lambda self, v: len(self._pprint(v))
-
-    _indents: list[str] = [""]
-    _indent_mode: bool = False
-
-    _max_inline = 120
     _config_fallback: dict = _default_config
 
     def __init__(
@@ -186,38 +178,33 @@ class Logger:
     def init_config(self) -> None:
 
         # Avoid circular import
-        from src.engine.config import get_config as Config
+        from src.engine.config import get as Config
 
-        self._config = Config(
-            self._name,
-            self._config_dict,
-            load_from_file=True,
-        )
+        self._config = Config().create(self._name, config_dict=self._config_dict)
 
-    # call to default print
     def _dbg(self, *args, enabled=True) -> None:
         if enabled:
-            print(*args)
+            print(*args)  # use default print function for internal debug
 
     def print(self, *args, **kwargs) -> None:
         args = [*args, "\n"]
         self.write(*args, **kwargs)
 
     def error(self, *args, **kwargs) -> None:
-        args = [f"/;cr//;err//;r/", *args, "\n"]
-        self.write(*args, **kwargs)
+        args = [f"/;_cross/cr;/ ", *args]
+        self.print(*args, **kwargs)
 
     def success(self, *args, **kwargs) -> None:
-        args = [f"/;cg//;suc//;r/", *args]
-        self.write(*args, **kwargs)
+        args = [f"/;_check/cg;/ ", *args]
+        self.print(*args, **kwargs)
 
     def prompt(self, *args, **kwargs) -> None:
         args = [f"/;cb//;prt//;r/", *args]
-        self.write(*args, **kwargs)
+        self.print(*args, **kwargs)
 
     def debug(self, *args, **kwargs) -> None:
         args = [f"/;cy//;dbg//;r/", *args]
-        self.write(*args, **kwargs)
+        self.print(*args, **kwargs)
 
     def clean_lines(self, instant=True, lines: int = 1):
         while lines > 0:
@@ -230,18 +217,8 @@ class Logger:
         glom(self._config_dict, key) if self._config is None else self._config.get(key)
     )
 
-    _decorators_cache = {}
-    _update_decorators_cache = lambda self: None
-    _decorator = lambda self, key: self._safe_get_config(f"styles.{key}")
-
-    def update_decorators_cache(self):
-
-        self._decorators_cache = {
-            key: self._safe_get_config(f"styles.{key}")
-            for key in self._safe_get_config("styles").keys()
-        }
-
     # decorators for printing structures
+    _decorator = lambda self, key: self._safe_get_config(f"styles.{key}")
     _psep = lambda self, c: f"/;{self._decorator('sep')}/{c}/;"
     _pobji = lambda self, key: f" /;/;_arrow/{self._decorator('obji')};//; "
     _pobjk = (
@@ -257,11 +234,15 @@ class Logger:
             else f"/;/;{self._decorator('str')}/'{str(v)}'/;"
         )
     )
+
+    _indents: list[str] = [""]
     _indents_buffer: TextIO = StringIO()
 
     def _indent(self) -> None:
         indents_char = self._indents_buffer.getvalue()
-        indents_char = re.sub(r"\x1b\[[0-9;]*m", "", indents_char)
+        indents_char = re.sub(
+            r"\x1b\[[0-9;]*m", "", indents_char
+        )  # just in case some are still here.
         self._indents.append(indents_char)
 
     def _dindent(self) -> None:
@@ -272,6 +253,7 @@ class Logger:
     def _new_line(self, indent_char=" ") -> None:
         self._stream.write("\n")
         indents_char = self._indents[-1]
+
         if len(self._indents) > 1:
             if self._print_indents_char:
                 self._stream.write(indents_char)
@@ -285,12 +267,17 @@ class Logger:
         self._indents_buffer.truncate(0)
         self._indents_buffer.write(indents_char)
 
-    def _write_dict(self, d: dict, force_inline=False) -> None:
+    _default_inline = lambda self, dl: len(self._indents[-1]) + len(
+        str(dl)
+    ) < self._safe_get_config("max_inline")
+    _current_path = []
+
+    def _write_dict(self, d: dict, force_inline=lambda k: False) -> None:
         self.write(self._psep("{"))
         self._indent()
-        inline = len(self._indents[-1]) + self._lpprint(d) < self._max_inline
-        if force_inline:
-            inline = True
+        inline = self._default_inline(d) or force_inline(
+            ".".join(map(str, self._current_path))
+        )
         inlining = inline
         for key, item in d.items():
             first = key == list(d.keys())[0]
@@ -304,7 +291,9 @@ class Logger:
             self.write(self._pobjk(key))
             if not self._wkwargs.get("compact", False):
                 self.write(" ")
-            self._write_value(item, force_inline=inline)
+            self._current_path.append(key)
+            self._write_value(item, force_inline=force_inline)
+            self._current_path.pop()
             if not last:
                 self.write(self._psep(","))
                 if not self._wkwargs.get("compact", False):
@@ -313,12 +302,12 @@ class Logger:
         self.write(self._psep("}"))
         self._dindent()
 
-    def _write_list(self, l: list, force_inline=False) -> None:
+    def _write_list(self, l: list, force_inline=lambda k: False) -> None:
         self.write(self._psep("["))
         self._indent()
-        inline = len(self._indents[-1]) + self._lpprint(l) < self._max_inline
-        if force_inline:
-            inline = True
+        inline = self._default_inline(l) or force_inline(
+            ".".join(map(str, self._current_path)),
+        )
         inlining = inline
         for i, item in enumerate(l):
             first = i == 0
@@ -329,7 +318,9 @@ class Logger:
                 self._new_line(" ")
             if not inline:
                 self.write(self._parri(i))
+            self._current_path.append(i)
             self._write_value(item, force_inline=force_inline)
+            self._current_path.pop()
             if not last:
                 self.write(self._psep(","))
                 if not self._wkwargs.get("compact", False):
@@ -338,7 +329,7 @@ class Logger:
         self.write(self._psep("]"))
         self._dindent()
 
-    def _write_value(self, v: any, force_inline=False) -> None:
+    def _write_value(self, v: any, force_inline=lambda k: False) -> None:
         if isinstance(v, dict):
             self._write_dict(v, force_inline=force_inline)
         elif isinstance(v, list):
@@ -351,17 +342,17 @@ class Logger:
     def write(self, *args, **kwargs) -> None:
 
         animate = self._safe_get_config("animate")
-        slow_mode = self._safe_get_config("slow_mode")
         flush_rate = self._safe_get_config("flush_rate")
 
         def_kwargs = self._wkwargs is None
         if def_kwargs:
             self._wkwargs = kwargs.copy()
             self._indents = [""]
+            self._current_path = []
 
         instant = self._wkwargs.get("instant", kwargs.get("instant", False))
         force_inline = self._wkwargs.get(
-            "force_inline", kwargs.get("force_inline", False)
+            "force_inline", kwargs.get("force_inline", lambda k: False)
         )
         if def_kwargs and instant:
             self._dbg("Instant Logger.write started", enabled=True)
@@ -371,6 +362,8 @@ class Logger:
                 self._write_dict(arg, force_inline=force_inline)
             elif isinstance(arg, list):
                 self._write_list(arg, force_inline=force_inline)
+            elif isinstance(arg, (int, float, bool)):
+                self._write_value(arg, force_inline=force_inline)
             else:
                 if not isinstance(arg, str):
                     if self._config.get("strict_logging", False):
@@ -394,24 +387,45 @@ class Logger:
                             )
                         # Continue to provide recursive patterns
                         continue
+
+                    # Get the char
                     char = remaining[0]
-                    remaining = remaining[1:]
+
+                    # Manage new lines
                     if char == "\n":
+                        remaining = remaining[1:]
                         self._new_line(" ")
                         continue
+
+                    # Optim: ansi codes => write all at once, do not add to indent buffer
+                    if char == "\x1b":
+                        lookahead = remaining[
+                            0 : max(20, len(remaining))
+                        ]  # 20 should be enough for ansi codes
+                        ansi_match = re.match(r"\x1b\[[0-9;]*m", lookahead).group(0)
+                        self._stream.write(ansi_match)
+                        remaining = remaining[len(ansi_match) :]
+                        continue
+
+                    # Write the char
                     self._stream.write(char)
                     self._indents_buffer.write(char)
-                    if char == " " or not animate or instant:
+
+                    # Consume the char
+                    remaining = remaining[1:]
+
+                    # Check instant or no animation mode
+                    if instant or not animate:
                         continue
+
+                    # Flush based on flush rate
                     if len(remaining) == 0:
                         self._stream.flush()
                         continue
                     mod = max(1, random.randint(flush_rate[0], flush_rate[1]))
-                    if slow_mode:
-                        mod = max(1, mod // 2)
                     if len(remaining) % mod == 0:
                         self._stream.flush()
-                        sleep(random.uniform(0.02, 0.04 if slow_mode else 0.01))
+                        sleep(random.uniform(0.01, 0.03))
 
         if def_kwargs:
             if instant:
@@ -448,14 +462,14 @@ def get_logger(
             stream=stream,
             create_config_dict=create_config_dict,
         )
-        _loggers[name].write(f"Logger '{name}' by {__name__}: ")
-        _loggers[name].print(
-            {
-                key: value
-                for key, value in _loggers[name]._config._config_dict.items()
-                if key not in ["styles"]
-            },
-            force_inline=True,
-            compact=True,
-        )
+        # _loggers[name].write(f"Logger '{name}' by {__name__}: ")
+        # _loggers[name].print(
+        #     {
+        #         key: value
+        #         for key, value in _loggers[name]._config._config_dict.items()
+        #         if key not in ["styles"]
+        #     },
+        #     force_inline=True,
+        #     compact=True,
+        # )
     return _loggers[name]
