@@ -23,7 +23,7 @@ from src.config import (
     print_config_state,
 )
 import src.engine.config as Config
-from src.engine.logger import get_logger as Logger, init_logging
+from src.engine.logger import get as Logger, init
 from src.cli import CliArgumentParser
 
 
@@ -231,7 +231,7 @@ def main(args: list[str] | None = None) -> int:
     """
     global _current_module
     _current_module = "main"
-    init_logging()
+    init()
     Config.init()
 
     parser = MainArgumentParser(argparse.ArgumentParser, add_help=False)

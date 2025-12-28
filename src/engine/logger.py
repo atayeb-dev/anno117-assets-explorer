@@ -443,12 +443,12 @@ class Logger:
 _loggers: dict[str, Logger] = None
 
 
-def init_logging():
+def init():
     global _loggers
     _loggers = {"default": Logger(name="default")}
 
 
-def get_logger(
+def get(
     name: str = "logger",
     stream: TextIO = sys.stdout,
     create_config_dict: dict = _default_config,
@@ -462,14 +462,4 @@ def get_logger(
             stream=stream,
             create_config_dict=create_config_dict,
         )
-        # _loggers[name].write(f"Logger '{name}' by {__name__}: ")
-        # _loggers[name].print(
-        #     {
-        #         key: value
-        #         for key, value in _loggers[name]._config._config_dict.items()
-        #         if key not in ["styles"]
-        #     },
-        #     force_inline=True,
-        #     compact=True,
-        # )
     return _loggers[name]

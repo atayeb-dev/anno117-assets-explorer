@@ -4,12 +4,12 @@ import re
 
 from glom import glom
 
-from src.engine.logger import get_logger as Logger
+import src.engine.logger as Logger
 from src.utils import deep_merge_dicts
 
 _global_config: GlobalConfig = None
-_default_logger: Logger = None
-_config_logger: Logger = None
+_default_logger: Logger.Logger = None
+_config_logger: Logger.Logger = None
 
 _default_config_file = "config.json"
 _file_pattern = lambda prefix: f"config/{prefix}-{_default_config_file}"
@@ -208,7 +208,7 @@ def init():
     global _config_logger
 
     # Keep default loader we may need it.
-    _default_logger = Logger("default")
+    _default_logger = Logger.get("default")
 
     # Use the default logger during load
     _config_logger = _default_logger
@@ -217,7 +217,7 @@ def init():
     _global_config = GlobalConfig()
 
     # Create logger configuration from logging's default and swap logger.
-    _config_logger = Logger(create_config_dict=_default_logger._config_dict.copy())
+    _config_logger = Logger.get(create_config_dict=_default_logger._config_dict.copy())
 
 
 def get(name: str = "") -> Config | GlobalConfig:

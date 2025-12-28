@@ -2,6 +2,7 @@
 /unpacked/
 /gen/
 /.cache/
+/config/
 
 # RdaConsole executable
 rda_console/RdaConsole.exe
