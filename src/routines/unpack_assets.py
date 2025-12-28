@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import DefaultDict
 
 from ..config import ConfigPath, get_file_path
-from ..log import log, clean
+from ..log import log, clean, pp_log
 from ..cli import CliArgumentParser
 from ..utils import (
     sanitize_filename,
@@ -185,32 +185,16 @@ def run(parser: CliArgumentParser) -> int:
         Exit code (0 on success, non-zero on failure).
     """
 
-    unpacked_dir = parser.module_arg("unpack_dir")
-    assets_file = parser.module_arg("assets_file")
+    unpack_dir = parser.module_arg("unpack_dir").validate(dir=True)
+    assets_file = parser.module_arg("assets_file").validate()
     templates = parser.module_arg("templates")
     guids = parser.module_arg("guids")
     merge = parser.module_arg("merge")
-    log(f"Assets file: {assets_file}")
-    log(f"Unpack directory: {unpacked_dir}")
-    log(f"Templates filter: {templates}")
-    log(f"GUIDs filter: {guids}")
-    log(f"Merge output filename: {merge}")
-
-    # Validate unpack directory
-    unpack_dir = unpacked_dir
-    if not unpack_dir.exists():
-        unpack_dir.mkdir(parents=True, exist_ok=True)
-
-    # Validate input file
-    assets_file = assets_file
-    if not assets_file.is_file():
-        raise FileNotFoundError(f"Assets file not found: {assets_file}")
 
     filter_regex = None
     mode = "templates" if templates else "guids" if guids else ""
     if mode:
         unpack_dir = unpack_dir.joinpath("merged" if merge else mode)
-
         if templates:
             filter_regex = templates if isinstance(templates, str) else None
         elif guids:

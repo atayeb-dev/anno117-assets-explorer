@@ -9,11 +9,8 @@ Provides a custom ArgumentParser that raises exceptions instead of exiting.
 # ============================================================
 
 import argparse
-from html import parser
-from tabnanny import check
+from pathlib import Path
 from types import ModuleType
-from typing import Type
-
 from src.config import get_file_path, get_value_or_none
 from .log import clean, log, pp_log
 from tkinter import Tk, filedialog
@@ -140,7 +137,6 @@ class CliArgumentParser(argparse.ArgumentParser):
     def __init__(
         self, module: ModuleType, module_args: list[str] | None = None, *args, **kwargs
     ):
-        log(f"CliArgumentParser initialized {args}, {kwargs}")
         self.simple_module_name = module.__name__.split(".")[-1]
         self.module_name = module.__name__
         self.module = module
@@ -151,7 +147,7 @@ class CliArgumentParser(argparse.ArgumentParser):
 
         super().__init__(add_help=False, *args, **kwargs)
         for arg in CLI_ARGUMENTS:
-            default = get_value_or_none(arg, prefix="cli.", default=False)
+            default = get_value_or_none(f"cli.{arg}", default=False)
             self.add_argument(arg, default=default, action="store_true", cli=True)
 
         build_parser_func = getattr(self.module, "build_parser")
@@ -199,11 +195,10 @@ class CliArgumentParser(argparse.ArgumentParser):
         is_file = type is not None and isinstance(
             type(argument_value if argument_value is not None else ""), ConfigPath
         )
-
         if is_file:
-            config_value = get_file_path(key, prefix=self.simple_module_name + ".")
+            config_value = get_file_path(key)
         else:
-            config_value = get_value_or_none(key, prefix=self.simple_module_name + ".")
+            config_value = get_value_or_none(key)
         if not live_run:
             argument_value = argument_value if argument_value else config_value
         else:
@@ -218,16 +213,17 @@ class CliArgumentParser(argparse.ArgumentParser):
                 stream=not instant_run,
                 silent=silent_run,
             )
-        if argument_value is None:
-            return None
-        if type is not None:
+
+        if argument_value is not None and type is not None:
             return type(argument_value)
-        return argument_value
+        return (
+            ConfigPath(str(Path.cwd() / argument_value)) if is_file else argument_value
+        )
 
     def cli(self, flag: str) -> bool:
         """Get CLI parsed arguments."""
         return getattr(
-            self.cli_parsed, flag, get_value_or_none(flag, prefix="cli.", default=False)
+            self.cli_parsed, flag, get_value_or_none(f"cli.{flag}", default=False)
         )
 
     def check_if_module_arg(self, arg: str) -> bool:
@@ -240,8 +236,19 @@ class CliArgumentParser(argparse.ArgumentParser):
             log("checking: " + arg[1:])
             return any(arg[1:] == p["short"] for p in list(self.module_params.values()))
 
+    # def check_if_module_arg(self, arg: str) -> bool:
+    #     """Check if a module parameter exists."""
+    #     long_check = arg.startswith("--")
+    #     if long_check:
+    #         log("checking: " + arg[2:].replace("-", "_"))
+    #         return arg[2:].replace("-", "_") in list(self.module_params.keys())
+    #     else:
+    #         log("checking: " + arg[1:])
+    #         return any(arg[1:] == p["short"] for p in list(self.module_params.values()))
+
     def _consume_module_args(self) -> None:
         """Parse arguments."""
+
         parsed = super().parse_args(self._init_args)
         filtered = {
             k: v for k, v in vars(parsed).items() if k in self.cli_params.keys()
@@ -251,6 +258,12 @@ class CliArgumentParser(argparse.ArgumentParser):
             k: v for k, v in vars(parsed).items() if k in self.module_params.keys()
         }
         self.module_parsed = argparse.Namespace(**filtered)
+        # pp_log(
+        #     {
+        #         "cli_parsed": vars(self.cli_parsed),
+        #         "module_parsed": vars(self.module_parsed),
+        #     }
+        # )
 
     def error(self, message):
         """Raise exception instead of exiting."""

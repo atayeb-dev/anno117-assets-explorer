@@ -16,7 +16,8 @@ Architecture:
 
 import json
 from pathlib import Path
-from .log import log, pp_log
+
+# from .log import log, pp_log
 
 # ============================================================
 # CONSTANTS
@@ -35,8 +36,22 @@ _CUSTOM_CONFIG_FILE = None
 class ConfigPath(Path):
     """Custom Path subclass for configuration paths."""
 
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls, *args, **kwargs)
+    def validate(self, dir=False) -> ConfigPath:
+        if self.none_file:
+            raise FileNotFoundError("Select a file")
+        if dir:
+            if not self.exists():
+                self.mkdir(parents=True, exist_ok=True)
+        else:
+            if not self.exists() or not self.is_file():
+                raise FileNotFoundError(
+                    f'{"Select a file" if str(self) == "." else f"File not found: {self}"}'
+                )
+        return self
+
+    def __init__(self, value: str | None):
+        self.none_file = value is None
+        super().__init__("." if value is None else value)
 
 
 # ============================================================
@@ -166,7 +181,7 @@ def _get_nested_dict(d: dict, path: str, default=None):
     return value
 
 
-def _get_value_or_none(key: str, default=None, type="str") -> any | None:
+def _get_value_or_none(key: str, default=None) -> any | None:
     """
     Get a value from global configuration, or None if not found.
 
@@ -178,15 +193,17 @@ def _get_value_or_none(key: str, default=None, type="str") -> any | None:
     """
     if not _GLOBAL_CONFIG:
         return None
-    config_value = _get_nested_dict(_GLOBAL_CONFIG, key, default=default)
+    # Try nesteing by module name to allow module-specific configs
+    config_value = _get_nested_dict(
+        _GLOBAL_CONFIG, f"{__name__}.{key}", default=default
+    )
     if config_value is None:
-        config_value = _get_nested_dict(
-            _GLOBAL_CONFIG, key, default=default
-        )  # try global
+        # try global key
+        config_value = _get_nested_dict(_GLOBAL_CONFIG, key, default=default)
     return config_value
 
 
-def get_value_or_none(key: str, default=None, prefix="") -> any | None:
+def get_value_or_none(key: str, default=None) -> any | None:
     """
     Get a value from global configuration, or None if not found.
 
@@ -196,24 +213,24 @@ def get_value_or_none(key: str, default=None, prefix="") -> any | None:
     Returns:
         Value for the requested key, or None if not found.
     """
-    return _get_value_or_none(f"{prefix}{key}", default=default)
+    return _get_value_or_none(f"{key}", default=default)
 
 
-def get_str_value(key: str, default="", prefix="") -> str:
-    str_value = _get_value_or_none(f"{prefix}{key}", default=default)
+def get_str_value(key: str, default="") -> str:
+    str_value = _get_value_or_none(f"{key}", default=default)
     if str_value is None:
         return ""
     return str(str_value)
 
 
-def get_bool_value(key: str, default=False, prefix="") -> bool:
-    bool_value = _get_value_or_none(f"{prefix}{key}", default=default)
+def get_bool_value(key: str, default=False) -> bool:
+    bool_value = _get_value_or_none(f"{key}", default=default)
     if bool_value is None:
         return False
     return bool(bool_value)
 
 
-def get_file_path(key: str, default=None, prefix="") -> ConfigPath:
+def get_file_path(key: str, default=None) -> ConfigPath:
     """
     Get a path from configuration.
     Args:
@@ -225,7 +242,7 @@ def get_file_path(key: str, default=None, prefix="") -> ConfigPath:
     Raises:
         KeyError: If key not found in paths.
     """
-    path_value = _get_value_or_none(f"{prefix}paths.{key}", default=default)
+    path_value = _get_value_or_none(f"paths.{key}", default=default)
     if path_value is None:
         return default
-    return ConfigPath(Path.cwd() / path_value)
+    return ConfigPath(str(Path.cwd() / path_value))

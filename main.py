@@ -16,24 +16,28 @@ Architecture:
 # ============================================================
 
 import argparse
-from email.mime import message
 import importlib
 import sys
-from pathlib import Path
 from src.config import (
-    load_global_config,
+    # load_global_config,
     print_config_state,
 )
-from src.log import clean, log, pp_log
+from src.engine.config import init_config, get_config as Config
+from src.engine.logger import get_logger as Logger, init_logging
 from src.cli import CliArgumentParser
-from tkinter import Tk, filedialog
+
 
 # ============================================================
 # CONSTANTS
 # ============================================================
 
 CLI_PREFIX = "src.routines."
-UI_MODULE = "src.ui"
+_current_module = None  # type: str
+
+
+def get_current_module():
+    global _current_module
+    return _current_module
 
 
 class LaunchError(Exception):
@@ -41,24 +45,19 @@ class LaunchError(Exception):
 
     def __init__(self):
 
-        self.message = "\
-\n==\n\
-{fh/atayeb Anno 117 Assets Explorer}\n\
- {hf/Modular routines} for {r/anno assets}: unpacking/searching/dumping/mapping.\n\
-   - Features:\n\
-    - Interactive CLI\n\
-    - ...\n\
-{fh/Launch} with {hu/'--cli'} for command-line interface.\n\
-\n\033[01m©\033[0m atayeb 2025\n\
-{hvl/If my work made your day better, consider backing its creator.}\n\
-==\n\
-"
+        self.message = """\
+==
+/;cg;bo/atayeb Anno 117 Assets Explorer
+ /;cb/Modular routines/;r/ for /;cr/anno assets/;r/ : unpacking/searching/dumping/mapping.
+   /;cy;it/Features/;:
+      - Interactive CLI
+      ...
+/;cg;bo/Launch/; with /;cy/'--cli'/; for command-line interface.
+\n\033[01m©\033[0m atayeb 2025
+/;da/If my work made your day better, consider backing its creator./;
+==
+"""
         super().__init__(self.message)
-
-
-# ============================================================
-# FILE SELECTION
-# ============================================================
 
 
 # ============================================================
@@ -66,147 +65,125 @@ class LaunchError(Exception):
 # ============================================================
 
 
-def _interactive_prompt() -> int:
-    """
-    Interactive CLI prompt loop.
+class ModuleDispatcher:
+    def _interactive_prompt(self) -> int:
 
-    Returns:
-        Exit code (0 on normal exit).
-    """
-    log("\n==")
-    log("Assets Explorer - Interactive CLI")
-    log("Welcome! Type {hu/help} for commands ; {hu/exit} or {hu/bye} to quit.")
-    print_config_state()
-    log("==")
-
-    while True:
-        try:
-            # Get user input
-            cmd = input(">>> ").strip()
-
-            if not cmd:
-                continue
-
-            # Handle exit
-            if cmd.lower() in ("exit", "bye", "quit"):
-                log("{succ/}Goodbye!")
-                return 0
-
-            # Handle help
-            if cmd.lower() == "help":
-                log("\nAvailable modules:")
-                log("  asset_finder        Search for assets by GUID")
-                log("  cache_manager       Manage cache (stats, clear)")
-                log("  extract_rda         Extract RDA archives")
-                log("  unpack_assets       Unpack XML assets")
-                log("  assets_mapper       Generate name-to-GUID mappings")
-                log("\nUsage: MODULE [ARGS...]")
-                log("Example: asset_finder --guid 12345678 --json\n")
-                continue
-
-            # Parse command
-            cmd_parts = cmd.split()
-            module_name = cmd_parts[0]
-            module_args = cmd_parts[1:]
-
-            # Execute module
-            result = _invoke_module(module_name, module_args)
-
-            if result != 0:
-                log(f"{{err/}}Command failed with exit code {result}\n")
-            else:
-                log(f"{{succ/}}Command executed successfully\n")
-
-        except ModuleNotFoundError:
-            log(f"{{err/}}Module not found: {module_name}\n")
-        except KeyboardInterrupt:
-            log(f"\n{{err/}}Interrupted!")
-        except Exception as e:
-            log(f"{{err/}}{e}\n")
-
-
-def _invoke_module(module_name: str, module_args: list[str]) -> int | None:
-    """
-    Dynamically import and invoke a module's entry point.
-
-    Attempts to import the specified module and calls the first available
-    callable among: main, run, cli, or ui. Handles both cases where the
-    callable accepts arguments and where it doesn't.
-
-    Hot reload enabled: Module is reloaded on each invocation for development.
-
-    Args:
-        module_name: Fully qualified module name to import.
-        module_args: Arguments to pass to the callable.
-
-    Returns:
-        Exit code (0-255) or None if no callable found.
-
-    Raises:
-        ModuleNotFoundError: If module cannot be imported.
-        Exception: Any exception raised by the module's callable.
-    """
-    if not module_name or module_name.strip() == "":
-        log(f"{{err/Module not found: {module_name}}}")
-
-    # shortcuts
-    module_short_name = module_name
-    if module_name in ["config", "cache"]:
-        module_name = f"{module_name}_manager"
-
-    module_name = f"{CLI_PREFIX}{module_name}"
-    mod = importlib.import_module(module_name)
-    mod = importlib.reload(mod)  # Hot reload for development
-
-    entry_point = getattr(mod, "run")
-    if entry_point is None or not callable(entry_point):
-        log(f"{{err/No entry point found in {module_name}}}")
-        return None
-
-    parser = CliArgumentParser(mod, module_args=module_args)
-
-    help_run = parser.cli("help")
-    instant_run = parser.cli("instant")
-    live_run = parser.cli("live")
-    silent_run = parser.cli("silent")
-
-    log("==============================")
-    log(f"Invoking module: {module_name}:")
-    if parser.cli("print_args"):
-        pp_log(
-            {
-                "cli": vars(parser.cli_parsed),
-                "module": vars(parser.module_parsed),
-            }
+        logger = Logger()
+        logger.print("==")
+        logger.print("Assets Explorer - Interactive CLI")
+        logger.print(
+            "Welcome! Type {hu/help} for commands ; {hu/exit} or {hu/bye} to quit."
         )
+        print_config_state()
+        logger.print("==")
 
-    if help_run:
-        if not hasattr(mod, "help"):
-            log("{err/}Nothing can help you now...}", stream=True)
-            return 0
-        else:
-            log("{arr/}Asked for help")
-            help_func = getattr(mod, "help")
-            help_text = ""
+        while True:
             try:
-                help_text = help_func(module_args)
-            except Exception:
-                help_text = help_func()
-            log(help_text, stream=not instant_run)
-            return 0
-    else:
-        try:
-            out = entry_point(parser)
-            if isinstance(out, int):
-                return out
-            elif isinstance(out, tuple):
-                if live_run and not silent_run:
-                    log(f"{{arr/}}{out[0]}")
-                return out[1]
+                # Get user input
+                cmd = input(">>> ").strip()
 
-        except Exception as e:
-            log(f"{{err/}}Error in module {{fn/{module_short_name}}}: {e}")
-            return 1
+                if not cmd:
+                    continue
+
+                # Easter egg.
+
+                if cmd.lower() == "kraken":
+                    logger.print("/;__kraken/;/ ")
+
+                # Handle exit
+                if cmd.lower() in ("exit", "bye", "quit"):
+                    logger.print("{succ/}Goodbye!")
+                    return 0
+
+                # Handle help
+                if cmd.lower() == "help":
+                    logger.write(f"{LaunchError().message}")
+                    continue
+
+                # Parse command
+                cmd_parts = cmd.split()
+                module_name = cmd_parts[0]
+                module_args = cmd_parts[1:]
+
+                # Execute module
+                result = self._invoke_module(module_name, module_args)
+
+                if result != 0:
+                    logger.error(f"Command failed with exit code {result}/;r/\n")
+                else:
+                    logger.success(f"Command executed successfully/;r/\n")
+
+            except ModuleNotFoundError:
+                logger.error(f"Module not found: {module_name}/;r/\n")
+            except KeyboardInterrupt:
+                logger.error(f"\nInterrupted!")
+            except Exception as e:
+                logger.error(f"{e}")
+
+    def _invoke_module(self, module_name: str, module_args: list[str]) -> int | None:
+        logger = Logger()
+
+        if not module_name or module_name.strip() == "":
+            logger.error(f"{{err/Module not found: {module_name}}}")
+
+        # shortcuts
+        module_short_name = module_name
+        if module_name in ["config", "cache"]:
+            module_name = f"{module_name}_manager"
+
+        module_name = f"{CLI_PREFIX}{module_name}"
+        mod = importlib.import_module(module_name)
+        mod = importlib.reload(mod)  # Hot reload for development
+
+        entry_point = getattr(mod, "run")
+        if entry_point is None or not callable(entry_point):
+            logger.error(f"{{err/No entry point found in {module_name}}}")
+            return None
+
+        parser = CliArgumentParser(mod, module_args=module_args)
+
+        help_run = parser.cli("help")
+        instant_run = parser.cli("instant")
+        live_run = parser.cli("live")
+        silent_run = parser.cli("silent")
+
+        logger.print("==============================")
+        logger.print(f"Invoking module: {module_name}:", module_args)
+        if parser.cli("print_args"):
+            logger.print(
+                {
+                    "cli": vars(parser.cli_parsed),
+                    "module": vars(parser.module_parsed),
+                }
+            )
+
+        if help_run:
+            if not hasattr(mod, "help"):
+                logger.error("{err/}Nothing can help you now...}")
+                return 0
+            else:
+                logger.print("{arr/}Asked for help")
+                help_func = getattr(mod, "help")
+                help_text = ""
+                try:
+                    help_text = help_func(module_args)
+                except Exception:
+                    help_text = help_func()
+                logger.print(help_text, stream=not instant_run)
+                return 0
+        else:
+            try:
+                out = entry_point(parser)
+                if isinstance(out, int):
+                    return out
+                elif isinstance(out, tuple):
+                    if live_run and not silent_run:
+                        logger.print(f"{{arr/}}{out[0]}")
+                    return out[1]
+
+            except Exception as e:
+                logger.error(f"{{err/}}Error in module {{fn/{module_short_name}}}: {e}")
+                return 1
 
 
 class MainArgumentParser(argparse.ArgumentParser):
@@ -230,14 +207,40 @@ def main(args: list[str] | None = None) -> int:
     Returns:
         Exit code (0 on success, non-zero on failure).
     """
+    global _current_module
+    _current_module = "main"
+    init_logging()
+    init_config()
 
     parser = MainArgumentParser(argparse.ArgumentParser, add_help=False)
     parser.add_argument("--cli", nargs=argparse.REMAINDER)
     parser.add_argument("-h", "--help", action="store_true")
+    # load_global_config()
 
-    # Load configuration
-    # load_global_config(parsed.config)
-    load_global_config()
+    # logger = Logger(
+    #     "test_fast_track_override",
+    #     config_dict={"animate": True, "flush_rate": [10, 20]},
+    # )
+    # # logger.print(Config()._config_dict)
+    # logger = Logger(
+    #     "default-from-config-globals",
+    # )
+    # logger.print(Config("default-from-config-globals")._config_dict)
+
+    # logger = Logger("logger", config_dict={"animate": True, "flush_rate": (10, 10)})
+    # logger = Logger()
+    # logger.print(
+    #     "this is a test log ", logger._config._config, instant=True, force_inline=True
+    # )
+    # logger.print("With unexisting", _global_config.get("test_array"), instant=True)
+    # logger.print(
+    #     "And simple array ",
+    #     _global_config.get("test.some_simple_array"),
+    #     instant=True,
+    # )
+    # print_config(Logger())
+
+    # logger.print("/;__kraken/;/ ")
 
     try:
         parsed = parser.parse_args(args)
@@ -246,23 +249,32 @@ def main(args: list[str] | None = None) -> int:
             raise LaunchError()
 
         if parsed.cli is not None:
+            dispatcher = ModuleDispatcher()
             if len(parsed.cli) == 0:
-                return _interactive_prompt()
+                return dispatcher._interactive_prompt()
 
             module_name = parsed.cli[0]
             module_args = parsed.cli[1:]
 
-            result = _invoke_module(module_name, module_args)
+            result = dispatcher._invoke_module(module_name, module_args)
             return result or 0
 
         else:
             raise LaunchError()
 
     except LaunchError as e:
-        log(f"{e}", stream=True)
+        logger = Logger(
+            "special",
+            create_config_dict={
+                "animate": True,
+                "slow_mode": True,
+                "flush_rate": [5, 9],
+            },
+        )
+        logger.write(f"{e}")
         return 1
     except Exception as e:
-        log(f"{{err/{e}}}")
+        print(f"{e}")
         return 1
 
 

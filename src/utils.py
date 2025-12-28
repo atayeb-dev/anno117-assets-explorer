@@ -10,13 +10,20 @@ Provides reusable functions for file handling, XML processing, and naming conven
 
 import xml.etree.ElementTree as ET
 from fnmatch import fnmatch
-from pathlib import Path
 from .log import log
+from pathlib import Path
 
 
-# ============================================================
-# JSON & SERIALIZATION
-# ============================================================
+def deep_merge_dicts(d1, d2):
+    """Recursively merge d2 into d1"""
+    for key, value in d2.items():
+        if not key in d1.keys():
+            d1[key] = value
+        elif isinstance(value, dict) and isinstance(d1.get(key), dict):
+            deep_merge_dicts(d1[key], value)
+        else:
+            d1[key] = value
+    return d1
 
 
 def make_json_serializable(obj):
@@ -44,8 +51,6 @@ def make_json_serializable(obj):
 # ============================================================
 # FILE OPERATIONS
 # ============================================================
-
-from pathlib import Path
 
 
 def sanitize_filename(name: str, strict: bool = False) -> str:

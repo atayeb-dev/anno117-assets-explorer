@@ -38,21 +38,16 @@ def run(parser: CliArgumentParser) -> int:
     Main entry point for cache manager.
 
     Args:
-        args: Command-line arguments:
-              --clear: Clear entire cache
-              --clear-not-found: Clear only not-found GUIDs
-              --stats: Show cache statistics
+        args: Command-line arguments
 
     Returns:
         Exit code (0 on success, 1 on error).
     """
-
     parsed = parser.module_parsed
 
     if parsed.reload:
         reload_config()
     if parsed.print:
-
         prints = parser.module_arg("print")
         if isinstance(prints, list) and len(prints) > 0:
             for path in prints:
