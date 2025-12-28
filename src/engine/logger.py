@@ -52,13 +52,14 @@ _ansi_pattern = (
 )
 # Specials: /;pattern/args;/
 # https://www.compart.com/en/unicode/
+_enclose = lambda c, *args: f"{c}" if not args[0] else f"/;{';'.join(args)}/{c}/;"
 _specials = {
     "__kraken/;/": lambda *args: f"/;__kraken/--;/;__kraken/--;/;/",
+    "_cross/s;;/": lambda *args: _enclose("✗", *args),
+    "_check/s;;/": lambda *args: _enclose("✓", *args),
+    "_arrow/s;;/": lambda *args: _enclose("→", *args),
+    "_wrench/s;;/": lambda *args: _enclose("🛠", *args),
     "_repeat/c;i;/": lambda *args: f"{args[0]*max(1,int(args[1]))}",
-    "_cross/s;;/": lambda *args: f"✗" if not args[0] else f"/;{';'.join(args)}/✗/;",
-    "_check/s;;/": lambda *args: f"✓" if not args[0] else f"/;{';'.join(args)}/✓/;",
-    "_arrow/s;;/": lambda *args: "→" if not args[0] else f"/;{';'.join(args)}/→/;",
-    "_wrench/s;;/": lambda *args: "🛠" if not args[0] else f"/;{';'.join(args)}/🛠/;",
 }
 _s_keys_matches = dict([(key.split("/")[0], val) for key, val in _specials.items()])
 _ansi_text = lambda codes: f"\x1b[{';'.join(str(c) for c in codes)}m"
@@ -156,8 +157,6 @@ _default_config = {
 
 
 class Logger:
-
-    _config_fallback: dict = _default_config
 
     def __init__(
         self,
