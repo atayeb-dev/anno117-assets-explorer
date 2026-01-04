@@ -1,21 +1,25 @@
 {
     "logger": {
-        "animate": true,
+        "animate": false,
         "flush_rate": [
             5,
             15
         ],
-        "strict_logging": false,
         "max_inline": 120,
         "styles": {
-            "sep": "cw;da",
+            "sep": "cw",
             "obji": "cb;da",
             "objk": "cg;bo",
             "arri": "cb;da",
-            "str": "cw;it",
+            "str": "cw;it;da",
             "bool": "cc",
             "num": "cb",
-            "dbg": "cm"
+            "dbg": "cm",
+            "unkn": "cr;da"
+        },
+        "debug": {
+            "enable": false,
+            "print_indent_chars": true
         }
     }
 }

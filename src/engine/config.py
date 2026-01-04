@@ -141,6 +141,9 @@ class Config:
         deep_merge_dicts(_global_config._config_dict[self._name], self._config_dict)
         _config_logger.success(f"Config {self._name} merged in global.")
 
+    def to_dict(self) -> dict:
+        return self._config_dict.copy()
+
 
 class GlobalConfig:
     _config_dict = None

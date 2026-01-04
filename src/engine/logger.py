@@ -141,7 +141,6 @@ def _detect_ansi_pattern(string: str) -> Tuple[str, str]:
 _default_config = {
     "animate": False,
     "flush_rate": [5, 15],
-    "strict_logging": False,
     "max_inline": 120,
     "styles": {
         "sep": "cw;da",
@@ -152,8 +151,137 @@ _default_config = {
         "bool": "cc",
         "num": "cb",
         "dbg": "cm",
+        "unkn": "cr;da",
+    },
+    "debug": {
+        "enable": False,
+        "print_indent_chars": True,
     },
 }
+
+
+class DataPrinter:
+
+    _logger: Logger
+    _default_inline = lambda self, dl: len(self._logger._indents[-1]) + len(
+        str(dl)
+    ) < self._logger._safe_get_config("max_inline")
+
+    def __init__(self, logger: Logger):
+        self._logger = logger
+
+    def build_simple_style(self, style: str, text: str) -> str:
+        style_config = lambda key: self._logger._safe_get_config(f"styles.{key}")
+        return f"/;{style_config(style)}/{text}/;"
+
+    def full_current_path(self) -> str:
+        return ".".join(map(str, self._logger._current_path))
+
+    def decorate(self, decoration: str, type: str = "") -> str:
+        path = self._logger._current_path
+        style_config = lambda key: self._logger._safe_get_config(f"styles.{key}")
+        build = lambda style, text: self.build_simple_style(style, text)
+        if decoration == "start" or decoration == "end":
+            str_decoration = ""
+            if type == "list":
+                str_decoration = "[" if decoration == "start" else "]"
+            elif type == "dict":
+                str_decoration = "{" if decoration == "start" else "}"
+            return build("sep", str_decoration)
+        elif decoration == "comma":
+            return build("sep", ",")
+        elif decoration == "item":
+            if isinstance(path[-1], int):
+                return build("arri", f" {str(path[-1])} ")
+            else:
+                return f" /;_arrow/{style_config("obji")};//; "
+        elif decoration == "key":
+            return build("objk", str(path[-1]) + build("sep", ":"))
+        return ""
+
+    def decorate_value(self, value: any) -> str:
+        build = lambda style, text: self.build_simple_style(style, text)
+        if isinstance(value, bool):
+            return build("bool", str(value))
+        elif isinstance(value, int) or isinstance(value, float):
+            return build("num", str(value))
+        elif isinstance(value, str):
+            return build("str", f"'{str(value)}'")
+        else:
+            return build("unkn", f"{str(value)}")
+
+    def _write_dict(
+        self, d: dict, force_inline=lambda k: False, compact=lambda k: False
+    ) -> None:
+        self._logger.write(self.decorate("start", type="dict"))
+        self._logger._indent()
+        inline = self._default_inline(d) or force_inline(self.full_current_path())
+        inlining = inline
+        compacting = compact(self.full_current_path())
+        for key, item in d.items():
+            self._logger._current_path.append(key)
+            first = key == list(d.keys())[0]
+            last = key == list(d.keys())[-1]
+            if first:
+                inlining = True
+            if not inlining:
+                self._logger._new_line(" ")
+            if not inline and not compacting:
+                self._logger.write(self.decorate("item"))
+            self._logger.write(self.decorate("key"))
+            if not compacting:
+                self._logger.write(" ")
+            self._write_value(item, force_inline=force_inline, compact=compact)
+            if not last:
+                self._logger.write(self.decorate("comma"))
+                if not compacting:
+                    self._logger.write(" ")
+            self._logger._current_path.pop()
+            inlining = inline
+        self._logger.write(self.decorate("end", type="dict"))
+        self._logger._dindent()
+
+    def _write_list(
+        self, l: list, force_inline=lambda k: False, compact=lambda k: False
+    ) -> None:
+        self._logger.write(self.decorate("start", type="list"))
+        self._logger._indent()
+        inline = self._default_inline(l) or force_inline(self.full_current_path())
+        inlining = inline
+        compacting = compact(self.full_current_path())
+        for i, item in enumerate(l):
+            self._logger._current_path.append(i)
+            first = i == 0
+            last = i == len(l) - 1
+            if first:
+                inlining = True
+            if not inlining:
+                self._logger._new_line(" ")
+            if not inline and not compacting:
+                self._logger.write(self.decorate("item"))
+            self._write_value(item, force_inline=force_inline, compact=compact)
+            if not last:
+                self._logger.write(self.decorate("comma"))
+                if not compacting:
+                    self._logger.write(" ")
+            self._logger._current_path.pop()
+            inlining = inline
+        self._logger.write(self.decorate("end", type="list"))
+        self._logger._dindent()
+
+    def _write_value(
+        self, v: any, force_inline=lambda k: False, compact=lambda k: False
+    ) -> None:
+        from src.engine.config import Config as Config
+
+        if isinstance(v, dict):
+            self._write_dict(v, force_inline=force_inline, compact=compact)
+        elif isinstance(v, list):
+            self._write_list(v, force_inline=force_inline, compact=compact)
+        elif isinstance(v, Config):
+            self._write_dict(v.to_dict(), force_inline=force_inline, compact=compact)
+        else:
+            self._logger.write(self.decorate_value(v))
 
 
 class Logger:
@@ -165,6 +293,7 @@ class Logger:
         stream: TextIO = sys.stdout,
     ):
         self._name = name
+        self._data_printer = DataPrinter(self)
         from src.utils import deep_merge_dicts
 
         self._config_dict = _default_config
@@ -204,7 +333,7 @@ class Logger:
         self.write(*args, **kwargs)
 
     def debug(self, *args, **kwargs) -> None:
-        args = [f"/;{self._decorator('dbg')}//;_wrench/;/ ", *args, "/;"]
+        args = [f"/;{self._safe_get_config(f"styles.dbg")}//;_wrench/;/ ", *args, "/;"]
         self.write(*args, **kwargs)
 
     def clean_lines(self, lines: int = 1):
@@ -217,26 +346,11 @@ class Logger:
         glom(self._config_dict, key) if self._config is None else self._config.get(key)
     )
 
-    # decorators for printing structures
-    _decorator = lambda self, key: self._safe_get_config(f"styles.{key}")
-    _psep = lambda self, c: f"/;{self._decorator('sep')}/{c}/;"
-    _pobji = lambda self, key: f" /;/;_arrow/{self._decorator('obji')};//; "
-    _pobjk = (
-        lambda self, key: f"/;/;{self._decorator('objk')}/{key}/;/;{self._decorator('sep')}/:/;"
-    )
-    _parri = lambda self, i: f" /;/;{self._decorator('arri')}/{str(i)}/; "
-    _pval = lambda self, v: (
-        f"/;/;{self._decorator('bool')}/{str(v)}/;"
-        if isinstance(v, bool)
-        else (
-            f"/;/;{self._decorator('num')}/{str(v)}/;"
-            if isinstance(v, int) or isinstance(v, float)
-            else f"/;/;{self._decorator('str')}/'{str(v)}'/;"
-        )
-    )
-
     _indents: list[str] = [""]
     _indents_buffer: TextIO = StringIO()
+    _print_indents_char: bool = False
+    _wkwargs: dict = None
+    _current_path: list[str | int] = ["root"]
 
     def _indent(self) -> None:
         indents_char = self._indents_buffer.getvalue()
@@ -247,8 +361,6 @@ class Logger:
 
     def _dindent(self) -> None:
         self._indents.pop()
-
-    _print_indents_char: bool = False
 
     def _new_line(self, indent_char=" ") -> None:
         self._stream.write("\n")
@@ -267,78 +379,6 @@ class Logger:
         self._indents_buffer.truncate(0)
         self._indents_buffer.write(indents_char)
 
-    _default_inline = lambda self, dl: len(self._indents[-1]) + len(
-        str(dl)
-    ) < self._safe_get_config("max_inline")
-    _current_path = []
-
-    def _write_dict(self, d: dict, force_inline=lambda k: False) -> None:
-        self.write(self._psep("{"))
-        self._indent()
-        inline = self._default_inline(d) or force_inline(
-            ".".join(map(str, self._current_path))
-        )
-        inlining = inline
-        for key, item in d.items():
-            first = key == list(d.keys())[0]
-            last = key == list(d.keys())[-1]
-            if first:
-                inlining = True
-            if not inlining:
-                self._new_line(" ")
-            if not inline:
-                self.write(self._pobji(key))
-            self.write(self._pobjk(key))
-            if not self._wkwargs.get("compact", False):
-                self.write(" ")
-            self._current_path.append(key)
-            self._write_value(item, force_inline=force_inline)
-            self._current_path.pop()
-            if not last:
-                self.write(self._psep(","))
-                if not self._wkwargs.get("compact", False):
-                    self.write(" ")
-            inlining = inline
-        self.write(self._psep("}"))
-        self._dindent()
-
-    def _write_list(self, l: list, force_inline=lambda k: False) -> None:
-        self.write(self._psep("["))
-        self._indent()
-        inline = self._default_inline(l) or force_inline(
-            ".".join(map(str, self._current_path)),
-        )
-        inlining = inline
-        for i, item in enumerate(l):
-            first = i == 0
-            last = i == len(l) - 1
-            if first:
-                inlining = True
-            if not inlining:
-                self._new_line(" ")
-            if not inline:
-                self.write(self._parri(i))
-            self._current_path.append(i)
-            self._write_value(item, force_inline=force_inline)
-            self._current_path.pop()
-            if not last:
-                self.write(self._psep(","))
-                if not self._wkwargs.get("compact", False):
-                    self.write(" ")
-            inlining = inline
-        self.write(self._psep("]"))
-        self._dindent()
-
-    def _write_value(self, v: any, force_inline=lambda k: False) -> None:
-        if isinstance(v, dict):
-            self._write_dict(v, force_inline=force_inline)
-        elif isinstance(v, list):
-            self._write_list(v, force_inline=force_inline)
-        else:
-            self.write(self._pval(v))
-
-    _wkwargs = None
-
     def write(self, *args, **kwargs) -> None:
 
         animate = self._safe_get_config("animate")
@@ -348,30 +388,25 @@ class Logger:
         if def_kwargs:
             self._wkwargs = kwargs.copy()
             self._indents = [""]
-            self._current_path = []
+            self._current_path = ["root"]
 
         instant = self._wkwargs.get("instant", kwargs.get("instant", False))
         force_inline = self._wkwargs.get(
             "force_inline", kwargs.get("force_inline", lambda k: False)
         )
+        compact = self._wkwargs.get("compact", kwargs.get("compact", lambda k: False))
+
         if def_kwargs and instant:
             self._dbg("Instant Logger.write started", enabled=True)
 
+        # from src.engine.config import Config as Config
+
         for arg in args:
-            if isinstance(arg, dict):
-                self._write_dict(arg, force_inline=force_inline)
-            elif isinstance(arg, list):
-                self._write_list(arg, force_inline=force_inline)
-            elif isinstance(arg, (int, float, bool)):
-                self._write_value(arg, force_inline=force_inline)
+            if not isinstance(arg, str):
+                self._data_printer._write_value(
+                    arg, force_inline=force_inline, compact=compact
+                )
             else:
-                if not isinstance(arg, str):
-                    if self._config.get("strict_logging", False):
-                        raise RuntimeError(
-                            f"Logger.write() only supports str, dict, and list types. Got {type(arg)} instead."
-                        )
-                    self.write(f"/;_cross/cr;/ Invalid log type /;cr/{type(arg)}/;")
-                    continue
                 remaining = arg
                 security_limit = len(remaining) + 10000
                 loops = 0
@@ -432,11 +467,6 @@ class Logger:
         if def_kwargs:
             if instant:
                 self._dbg("Instant Logger.write completed", enabled=True)
-            reset_style = self._wkwargs.get(
-                "reset_style", kwargs.get("reset_style", True)
-            )
-            if reset_style:
-                self.write("/;")
             self._stream.flush()
             self._indents = [""]
             self._wkwargs = None

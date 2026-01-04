@@ -226,17 +226,28 @@ def unit_test():
             test_array = v
             key = k
     logger.success(
-        "Reverted logger config, testing print: ",
+        "Reverted logger config, testing inline print with compact mode: ",
         {key: test_array},
         force_inline=lambda k: True,
-        compact=True,
+        compact=lambda k: True,
     )
+    logger.success(
+        "Now testing array compact mode: ",
+        [test_array, test_array, test_array, test_array],
+        compact=lambda k: True,
+    )
+    logger.prompt(
+        "Testing config type with compact mode: ",
+        Config.get("logger"),
+        "\n",
+        compact=lambda k: True,
+        force_inline=lambda k: "styles" in k,
+    )
+    logger.prompt("Testing unknown type: ", (1, 2, 3), "\n")
     logger.error("This is a test error message.")
     logger.success("This is a test success message.")
-    logger.prompt("This is a test prompt message.")
-    logger.print()
-    logger.debug("This is a test debug message.")
-    logger.print()
+    logger.prompt("This is a test prompt message.\n")
+    logger.debug("This is a test debug message.\n")
 
 
 def main(args: list[str] | None = None) -> int:
