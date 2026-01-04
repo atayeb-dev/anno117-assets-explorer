@@ -220,7 +220,10 @@ def init():
     _global_config = GlobalConfig()
 
     # Create logger configuration from logging's default and swap logger.
-    _config_logger = Logger.get(create_config_dict=_default_logger._config_dict.copy())
+    _config_logger = Logger.get(
+        create_config_dict=_default_logger._config_dict.copy(),
+        stream=_default_logger._stream,
+    )
 
 
 def get(name: str = "") -> Config | GlobalConfig:

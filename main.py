@@ -17,6 +17,7 @@ Architecture:
 
 import argparse
 import importlib
+from io import StringIO
 import sys
 from src.config import (
     # load_global_config,
@@ -48,13 +49,13 @@ class LaunchError(Exception):
         self.message = """\
 ==
 /;cg;bo/atayeb Anno 117 Assets Explorer
- /;cb/Modular routines/;r/ for /;cr/anno assets/;r/ : unpacking/searching/dumping/mapping.
+ /;cb/Modular routines/; for /;cr/anno assets/; : unpacking/searching/dumping/mapping.
    /;cy;it/Features/;:
       - Interactive CLI
       ...
 /;cg;bo/Launch/; with /;cy/'--cli'/; for command-line interface.
 \n\033[01m©\033[0m atayeb 2025
-/;da/If my work made your day better, consider backing its creator./;
+/;di/If my work made your day better, consider backing its creator./;
 ==
 """
         super().__init__(self.message)
@@ -109,12 +110,12 @@ class ModuleDispatcher:
                 result = self._invoke_module(module_name, module_args)
 
                 if result != 0:
-                    logger.error(f"Command failed with exit code {result}/;r/\n")
+                    logger.error(f"Command failed with exit code {result}/;\n")
                 else:
-                    logger.success(f"Command executed successfully/;r/\n")
+                    logger.success(f"Command executed successfully/;\n")
 
             except ModuleNotFoundError:
-                logger.error(f"Module not found: {module_name}/;r/\n")
+                logger.error(f"Module not found: {module_name}/;\n")
             except KeyboardInterrupt:
                 logger.error(f"\nInterrupted!")
             except Exception as e:
@@ -200,7 +201,7 @@ def unit_test():
     config_dict = {
         "flush_rate": [15, 20],
         "styles": {
-            "str": "cw;it;da",
+            "str": "cw;it;di",
             "sep": "cw",
         },
     }
@@ -239,15 +240,14 @@ def unit_test():
     logger.prompt(
         "Testing config type with compact mode: ",
         Config.get("logger"),
-        "\n",
         compact=lambda k: True,
         force_inline=lambda k: "styles" in k,
     )
-    logger.prompt("Testing unknown type: ", (1, 2, 3), "\n")
+    logger.prompt("Testing unknown type: ", (1, 2, 3))
     logger.error("This is a test error message.")
     logger.success("This is a test success message.")
-    logger.prompt("This is a test prompt message.\n")
-    logger.debug("This is a test debug message.\n")
+    logger.prompt("This is a test prompt message.")
+    logger.debug("This is a test debug message.")
 
 
 def main(args: list[str] | None = None) -> int:
@@ -277,7 +277,15 @@ def main(args: list[str] | None = None) -> int:
         unit_test()
         sys.argv.remove("--unit-test")
     if "--kraken" in sys.argv:
-        Logger.get().print("/;__kraken/;/ ")
+        try:
+            Logger.get().print("/;__kraken/;/ ")
+        except Exception as e:
+            stream = StringIO()
+            kraken = "/;" + "/;".join(f"{e}".split("/;")[1:])
+            Logger.get("default").write(kraken, ansi=False, stream=stream)
+            Logger.get("default").error(f"{e}".split("/;")[0][:-1], end=": /;cm;bo/")
+            Logger.get("default").write(stream.getvalue(), ansi=False)
+            Logger.get("default").print("/;")
         sys.argv.remove("--kraken")
 
     Config.get("logger").merge()
@@ -286,7 +294,6 @@ def main(args: list[str] | None = None) -> int:
         force_inline=lambda k: "logger.styles" in k,
     )
     Config.get().dump()
-    Config.get("logger").dump()
 
     try:
         parsed = parser.parse_args(args)
@@ -311,6 +318,7 @@ def main(args: list[str] | None = None) -> int:
     except LaunchError as e:
         logger = Logger.get(
             "special",
+            stream=sys.stdout,
             create_config_dict={
                 "animate": True,
                 "flush_rate": [1, 3],

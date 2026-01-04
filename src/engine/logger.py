@@ -9,7 +9,7 @@ from time import sleep
 from typing import TextIO, Tuple
 from glom import glom
 
-ANSI_CODES = {
+_ANSI_CODES = {
     "r": [0],  # reset
     "h": [8],  # hide
     "cr": [31],  # red
@@ -21,27 +21,7 @@ ANSI_CODES = {
     "cw": [37],  # white
     "bo": [1],  # bold
     "it": [3],  # italic
-    "da": [2],  # dim
-}
-
-ANSI_STYLES = {
-    # reset
-    "r": ["r"],
-    "res": ["r"],
-    # logging
-    "err": ["cr", "bo"],
-    "prt": ["cw", "da"],
-    "suc": ["cg", "bo"],
-    "dbg": ["cg", "bo"],
-}
-
-ANSI_STYLES_CODES = {
-    key: [ANSI_CODES[code][0] for code in codes] for key, codes in ANSI_STYLES.items()
-}
-
-_ANSI_CODES = {
-    **ANSI_CODES,
-    **ANSI_STYLES_CODES,
+    "di": [2],  # dim
 }
 
 # Markers and pattern /;pattern/
@@ -84,10 +64,8 @@ def _detect_ansi_pattern(string: str) -> Tuple[str, str]:
     lookahead = test_str[0:max_lookahead]
 
     # search specials then shortcuts then single
-    tags = _s_keys_matches.keys() | ANSI_STYLES_CODES.keys() | ANSI_CODES.keys()
+    tags = _s_keys_matches.keys() | _ANSI_CODES.keys()
     for tag in tags:
-        if hit:
-            break
         if lookahead.startswith(f"{tag}"):
             hit = tag
             if lookahead.startswith(f"{tag}/"):
@@ -108,6 +86,7 @@ def _detect_ansi_pattern(string: str) -> Tuple[str, str]:
                     pattern = _ansi_pattern(tag)
                     text = _ansi_text(_ANSI_CODES[tag])
                 return (pattern, text)
+            break
 
     if hit and f";" not in lookahead:
         raise SyntaxError(
@@ -123,12 +102,12 @@ def _detect_ansi_pattern(string: str) -> Tuple[str, str]:
         if tag.isdigit():
             ansi_codes.append(int(tag))
         # Maybe /;some random text
-        elif tag not in ANSI_CODES.keys():
+        elif tag not in _ANSI_CODES.keys():
             # consider it a single reset tag '/;'
             return (_ANSI_MARK, _ansi_text(_ANSI_CODES["r"]))
         # Compose shortcuts
         else:
-            ansi_codes.extend(ANSI_CODES[tag])
+            ansi_codes.extend(_ANSI_CODES[tag])
         # End on trailing mark
         if f"{tag}/" in lookahead + "/":
             return (_ansi_pattern(lookahead), _ansi_text(ansi_codes))
@@ -143,15 +122,14 @@ _default_config = {
     "flush_rate": [5, 15],
     "max_inline": 120,
     "styles": {
-        "sep": "cw;da",
-        "obji": "cb;da",
+        "sep": "cw;di",
+        "obji": "cb;di",
         "objk": "cg;bo",
-        "arri": "cb;da",
+        "arri": "cb;di",
         "str": "cw;it",
         "bool": "cc",
         "num": "cb",
-        "dbg": "cm",
-        "unkn": "cr;da",
+        "unkn": "cr;di",
     },
     "debug": {
         "enable": False,
@@ -171,8 +149,10 @@ class DataPrinter:
         self._logger = logger
 
     def build_simple_style(self, style: str, text: str) -> str:
-        style_config = lambda key: self._logger._safe_get_config(f"styles.{key}")
-        return f"/;{style_config(style)}/{text}/;"
+        style_config = self._logger._safe_get_config(f"styles.{style}")
+        if style_config is None:
+            return text
+        return f"/;{style_config}/{text}/;"
 
     def full_current_path(self) -> str:
         return ".".join(map(str, self._logger._current_path))
@@ -317,7 +297,11 @@ class Logger:
             print(*args)  # use default print function for internal debug
 
     def print(self, *args, **kwargs) -> None:
-        args = [*args, "\n"]
+        if "end" not in kwargs:
+            args = [*args, "\n"]
+        else:
+            args = [*args, kwargs["end"]]
+            del kwargs["end"]
         self.write(*args, **kwargs)
 
     def error(self, *args, **kwargs) -> None:
@@ -330,11 +314,11 @@ class Logger:
 
     def prompt(self, *args, **kwargs) -> None:
         args = [f"/;_arrow/cb;bo;/ ", *args]
-        self.write(*args, **kwargs)
+        self.print(*args, **kwargs)
 
     def debug(self, *args, **kwargs) -> None:
-        args = [f"/;{self._safe_get_config(f"styles.dbg")}//;_wrench/;/ ", *args, "/;"]
-        self.write(*args, **kwargs)
+        args = [f"/;cm;bo//;_wrench/;/ ", *args, "/;"]
+        self.print(*args, **kwargs)
 
     def clean_lines(self, lines: int = 1):
         while lines > 0:
@@ -385,21 +369,36 @@ class Logger:
         flush_rate = self._safe_get_config("flush_rate")
 
         def_kwargs = self._wkwargs is None
+        def_stream = None
         if def_kwargs:
             self._wkwargs = kwargs.copy()
+            _loggers["default"]._dbg(
+                "start of Logger.write with wkwargs:",
+                args,
+                self._wkwargs,
+                enabled=False,
+            )
             self._indents = [""]
             self._current_path = ["root"]
+
+            if "stream" in self._wkwargs.keys():
+                _loggers["default"]._dbg(
+                    "Logger.write overriding stream for this write call",
+                    self._wkwargs["stream"],
+                    enabled=False,
+                )
+                def_stream = self._stream
+                self._stream = self._wkwargs["stream"]
 
         instant = self._wkwargs.get("instant", kwargs.get("instant", False))
         force_inline = self._wkwargs.get(
             "force_inline", kwargs.get("force_inline", lambda k: False)
         )
         compact = self._wkwargs.get("compact", kwargs.get("compact", lambda k: False))
+        process_ansi = self._wkwargs.get("ansi", kwargs.get("ansi", True))
 
         if def_kwargs and instant:
             self._dbg("Instant Logger.write started", enabled=True)
-
-        # from src.engine.config import Config as Config
 
         for arg in args:
             if not isinstance(arg, str):
@@ -414,7 +413,7 @@ class Logger:
                     loops += 1
                     # Mange ANSI patterns on the fly
                     lookahead = remaining[0:2]
-                    if lookahead == _ANSI_MARK:
+                    if process_ansi and lookahead == _ANSI_MARK:
                         ansi = _detect_ansi_pattern(remaining)
                         remaining = ansi[1] + remaining[len(ansi[0]) :]
                         # Do not let the kraken grow...
@@ -470,6 +469,13 @@ class Logger:
             self._stream.flush()
             self._indents = [""]
             self._wkwargs = None
+            if def_stream is not None:
+                self._stream = def_stream
+            _loggers["default"]._dbg(
+                "end of Logger.write resetting wkwargs",
+                self._wkwargs,
+                enabled=False,
+            )
 
 
 _loggers: dict[str, Logger] = None
@@ -477,21 +483,30 @@ _loggers: dict[str, Logger] = None
 
 def init():
     global _loggers
-    _loggers = {"default": Logger(name="default")}
+    _loggers = {"default": Logger(name="default", stream=sys.stdout)}
 
 
 def get(
     name: str = "logger",
-    stream: TextIO = sys.stdout,
-    create_config_dict: dict = _default_config,
+    stream: TextIO = None,
+    create_config_dict: dict = None,
 ) -> Logger:
     """Get or create a logger by name."""
     global _loggers
 
     if not name in _loggers:
+        if stream is None:
+            raise RuntimeError(f"Provide stream to create logger.")
         _loggers[name] = Logger(
             name=name,
             stream=stream,
             create_config_dict=create_config_dict,
         )
+    else:
+        import src.engine.config as Config
+
+        if create_config_dict is not None:
+            Config.get(name).reload(trust="dict", config_dict=create_config_dict)
+        if stream is not None:
+            _loggers[name]._stream = stream
     return _loggers[name]
