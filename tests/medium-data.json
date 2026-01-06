@@ -1,0 +1,65 @@
+{
+    "some_simple_array": [
+        1,
+        "Heello, World!",
+        [
+            1,
+            2,
+            3
+        ],
+        {
+            "an": "object",
+            "with": "properties"
+        },
+        5,
+        6
+    ],
+    "some_array": [
+        0,
+        "a string : that describes something",
+        true,
+        [
+            1,
+            2,
+            3,
+            {
+                "deeply_nested_object": {
+                    "key": "value"
+                }
+            }
+        ],
+        {
+            "nested_object_in_array": {
+                "inner_key": "inner_value"
+            }
+        },
+        32.1564684684684651351351468798798765132154,
+        [
+            {
+                "an": "object",
+                "other": "object"
+            },
+            {
+                "an": "object",
+                "other": "object"
+            },
+            {
+                "an": "object",
+                "other": "object"
+            },
+            {
+                "an": "object",
+                "other": "object"
+            },
+            {
+                "an": "object"
+            },
+            {
+                "an": "object"
+            },
+            {
+                "an": "object"
+            }
+        ]
+    ]
+}
