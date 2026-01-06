@@ -66,6 +66,10 @@ def run(parser: Cli.CliArgumentParser):
             trust="dict",
         )
         print_config("Reloaded config trusting dict: ")
+        test_logger_config._custom_config_path = "tests/unknown.json"
+        test_logger_config.reload()
+        print_config("Reloaded config trusting file: ")
+        test_logger_config._custom_config_path = "tests/unit-test-logger.json"
         test_logger_config.reload()
         print_config("Reloaded config trusting file: ")
         test_logger_config.delete_file()

@@ -33,16 +33,14 @@ def _read_config_from_file(path: str | Path) -> dict:
     global _config_logger
     try:
         config = _silent_read_config_from_file(path)
-        _config_logger.success(
-            f"Loaded config from {(Path.cwd() / path).relative_to(Path.cwd())}"
-        )
+        _config_logger.success(f"Loaded config from {path.absolute()}")
         return config
     except Exception as e:
-        pass
+        _config_logger.error(f"Failed to load config file: {path.absolute()}")
     return {}
 
 
-def _write_config_to_file(path: str | Path, config: dict, silent=False) -> Path:
+def _write_config_to_file(path: str | Path, config: dict) -> Path:
     global _config_logger
     try:
         write_path = Path(path)
@@ -51,11 +49,7 @@ def _write_config_to_file(path: str | Path, config: dict, silent=False) -> Path:
         with open(write_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4)
     except Exception:
-        if not silent:
-            _config_logger.error(
-                f"Failed to write config file: {write_path.absolute()}"
-            )
-        pass
+        _config_logger.error(f"Failed to write config file: {write_path.absolute()}")
     return {}
 
 
