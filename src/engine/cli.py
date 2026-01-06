@@ -252,12 +252,15 @@ class CliArgument:
         self.default = default
         self.expect = expect
         self.values = None
+        self._raw_values = None
         self.type = type
         self.required = required
         self.accepted_values = accepted_values
         self._finalize()
 
     def _finalize(self):
+        # indicate not provided.
+        self.provided = False
         # prepare bool type handling
         if self.type == bool:
             if not self.accepted_values:
@@ -268,6 +271,20 @@ class CliArgument:
         if not isinstance(self.default, list) and self.default is not None:
             self.default = [self.default]
 
+    def _validate(self):
+        if self.required and not self.provided:
+            raise CliArgumentError(self, "required")
+        elif self.expect == "one" and len(self._raw_values) > 0:
+            raise CliArgumentError(self, "too_many_values")
+        elif self.provided and self._get_value() is None:
+            raise CliArgumentError(self, "missing_value")
+        elif self.provided and self.accepted_values:
+            invalid_values = [
+                v for v in self._raw_values if v not in self.accepted_values
+            ]
+            if len(invalid_values) > 0:
+                raise CliArgumentError(self, "unexpected_value(s)")
+
     def _parse_bool_value(self, value: str) -> bool:
         if value.lower() in ["y", "yes", "true"]:
             return True
@@ -275,11 +292,27 @@ class CliArgument:
             return False
         raise CliArgumentValueError(self, value)
 
-    def _validate_value(self, value: str):
-        if not self.accepted_values:
+    def _parse_final_values(self):
+        # Only process provided
+        if not self.provided:
             return
-        if value.lower() not in [v.lower() for v in self.accepted_values]:
-            raise CliArgumentValueError(self, value)
+        if len(self._raw_values) == 0:
+            # For bool type, set to True if no value provided
+            if self.type == bool:
+                self.values.append(True)
+            # Else, set to default if available
+            elif self.default is not None:
+                self.values.extend(self.default)
+        else:
+            # Parse raw values
+            for value in self._raw_values:
+                # Prepare reader.
+                value_reader = str
+                if self.type == bool:
+                    value_reader = self._parse_bool_value
+                elif self.type is not None:
+                    value_reader = self.type
+                self.values.append(value_reader(value))
 
     def _get_value(self) -> any | None:
         # for bool type with no values, return default
@@ -302,33 +335,12 @@ class CliArgument:
             "accepted_values": self.accepted_values,
         }
 
-    def request_value(self) -> None:
-        choices = ["y", "yes", "n", "no"] if self.type == bool else self.accepted_values
+    def request_value(self, message) -> None:
+        value = prompt_user(message)
 
-    def parse_value_from_args(self, args: list[str]) -> None:
-        if self.values is None:
-            self.values = []
-        elif self.expect == "one" and len(self.values) > 0:
-            raise CliArgumentError(self, "expected_one")
-        if not args:
-            # For bool type, set to True if no value provided
-            if self.type == bool:
-                self.values.append(True)
-            # Else, set to default if available
-            elif self.default is not None:
-                self.values.extend(self.default)
-        else:
-            # Parse provided values
-            for arg in args:
-                # Check validity
-                self._validate_value(arg)
-                # Prepare reader.
-                value_reader = str
-                if self.type == bool:
-                    value_reader = self._parse_bool_value
-                elif self.type is not None:
-                    value_reader = self.type
-                self.values.append(value_reader(arg))
+    def store_raw_values(self, args: list[str]) -> None:
+        self.provided = True
+        self._raw_values = [*args]
 
 
 CLI_ARGUMENTS: list[CliArgument] = [
@@ -492,35 +504,19 @@ class CliArgumentParser:
                         else:
                             self._cli_args[
                                 self._short_cli_args_mapping[short_flag]
-                            ].parse_value_from_args(values)
+                            ].store_raw_values(values)
                 else:
                     if not flag in self._cli_args:
                         raise CliError(f"Unknown flag {flag}.")
-                    self._cli_args[flag].parse_value_from_args(values)
+                    self._cli_args[flag].store_raw_values(values)
             except CliError as e:
                 errors.append(e)
 
-        # check required arguments
-        for required_arg in [
-            arg for arg in self._cli_args.values() if arg.required and not hit(arg)
-        ]:
+        # Validate arguments
+        for argument in self._cli_args.values():
             try:
-                if required_arg._get_value() is None:
-                    raise CliArgumentError(required_arg, "required")
-            except CliError as e:
-                errors.append(e)
-
-        # check no-value arguments
-        for no_value_arg in [
-            arg
-            for arg in self._cli_args.values()
-            if arg.values is not None and len(arg.values) == 0
-        ]:
-            try:
-                if not no_value_arg in [
-                    e.argument for e in errors if isinstance(e, CliArgumentValueError)
-                ]:
-                    raise CliArgumentError(no_value_arg, "missing")
+                argument._validate()
+                argument._parse_final_values()
             except CliError as e:
                 errors.append(e)
 
