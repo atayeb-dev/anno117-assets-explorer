@@ -8,12 +8,21 @@ Provides a custom ArgumentParser that raises exceptions instead of exiting.
 # IMPORTS
 # ============================================================
 
-import argparse
-import config as Config
-import logger as Logger
+import re
+import sys
+
+import src.engine.config as Config
+import src.engine.logger as Logger
 from pathlib import Path
 from types import ModuleType
 from tkinter import Tk, filedialog
+from typing import Callable, Tuple
+
+_cli_logger: Logger.Logger = Logger.get(
+    "cli.logger",
+    stream=sys.stdout,
+    create_config_dict=Config.get("logger").to_dict(),
+)
 
 
 def _select_file_gui(title: str = "Select a file") -> str:
@@ -60,42 +69,56 @@ def prompt(
     key: str = None,
     default: str = "",
     autoconfirm: bool = False,
-    stream: bool = False,
     silent=False,
+    ex: bool = False,
+    ex_type: str = "none",
 ) -> str:
     """Ask user to input text."""
-    out_provide = lambda stream: log(
-        f"{{arr/}}Please provide {{hul/[{key}]}}: ",
-        stream=stream,
-        nl=False,
+    logger = Logger.get()
+    out_confirm = lambda instant=False: logger.prompt(
+        f"Please confirm /;cy/[{key}]/; (/;_arrow/cg;bo;/ /;cw;di/{default}/;): ",
+        end="",
+        instant=instant,
     )
-    out_autoconfirm = lambda stream: log(
-        f"{{arr/}}Provided {{hul/[{key}]}}: ",
-        stream=stream,
-        nl=False,
+    out_provide_ex = lambda instant=False: logger.prompt(
+        f"Please provide {ex_type} /;cy/[{key}]/; (/;_arrow/cg;bo;/ /;cw;di/{default}/;): ",
+        end="",
+        instant=instant,
+    )
+    out_autoconfirm = lambda instant=False: logger.prompt(
+        f"Provided [{key}]: ",
+        end="",
+        instant=instant,
     )
 
     input_value = ""
-    if autoconfirm and default is not None:
+    if autoconfirm:
         if not silent:
-            out_autoconfirm(stream)
+            out_autoconfirm()
         input_value = default
     else:
-        out_provide(stream)
+        if ex:
+            # out_debug_ex()
+            out_provide_ex()
+        else:
+            out_confirm()
+
         input_value = input().strip()
-        clean(1)
-        out_provide(False)
+        logger.clean_lines(1)
+        if ex:
+            out_provide_ex(True)
+        else:
+            out_confirm(True)
 
     if input_value == "":
         input_value = default
 
-    if input_value is None:
-        log(f"{{err0/ None}} ")
+    if input_value is None or input_value is False:
+        logger.error(f"{input_value}")
     elif input_value == "":
-        log(f"{{hvl/empty}} ")
+        logger.print(f"/;cw;di/(empty)/;")
     else:
-        log(f"{{succ0/}} {input_value}")
-
+        logger.success(f"{input_value}")
     return input_value
 
 
@@ -104,167 +127,401 @@ def prompt_for_arg(
     default=None,
     is_file: bool = False,
     autoconfirm: bool = False,
-    stream: bool = False,
     silent: bool = False,
+    ex: bool = False,
+    ex_type: str = "none",
 ) -> str:
     if is_file:
         return select_file(
-            key, default=default, autoconfirm=autoconfirm, stream=stream, silent=silent
+            key,
+            default=default,
+            autoconfirm=autoconfirm,
+            silent=silent,
+            ex=ex,
+            ex_type=ex_type,
         )
     else:
         return prompt(
-            key, default=default, autoconfirm=autoconfirm, stream=stream, silent=silent
+            key,
+            default=default,
+            autoconfirm=autoconfirm,
+            silent=silent,
+            ex=ex,
+            ex_type=ex_type,
         )
+
+
+def prompt_user(message: str, default: str = None) -> str:
+    """Prompt user for input with a message."""
+    global _cli_logger
+
+    _cli_logger.prompt(f"{message}", end="")
+    input_value = input().strip()
+    _cli_logger.clean_lines(1)
+    if input_value == "":
+        input_value = default
+
+    if input_value is None or input_value is False:
+        _cli_logger.prompt(f"{message}", end="")
+        _cli_logger.error(f"{input_value}")
+    elif input_value == "":
+        _cli_logger.print(f"{message}/;cw;di/(empty)/;")
+    else:
+        _cli_logger.success(f"{message}{input_value}")
+
+    return input_value
 
 
 # ============================================================
 # ARGUMENT PARSING
 # ============================================================
 
-CLI_ARGUMENTS = [
-    "help",
-    "instant",
-    "silent",
-    "live",
-    "confirm",
-    "print_args",
+
+class CliError(Exception):
+
+    def __init__(self, message: str):
+        super().__init__(message)
+
+    def solve(self) -> list[str]:
+        _cli_logger.critical(f"Ignoring error: {self}")
+        return []
+
+
+class CliArgumentError(CliError):
+
+    def __init__(self, argument: CliArgument, type: str):
+        self.argument = argument
+        self.type = type
+        if type == "required":
+            message = f"Missing required argument: {argument.long}"
+        elif type == "missing":
+            message = f"Missing argument value: {argument.long}"
+        elif type == "expected_one":
+            message = f"Too many values for argument: {argument.long}"
+        if self.argument.short:
+            message += f"/{argument.short}"
+        super().__init__(message)
+
+    def solve(self) -> list[str]:
+        global _cli_logger
+        args = [self.argument.long]
+        _cli_logger.critical(f"{self}")
+        if self.type in ["required", "missing"]:
+            value = prompt_user(f"Please provide a value for {self.argument.long}: ")
+        if value:
+            args.extend(value.split(" "))
+        return args
+
+
+class CliArgumentValueError(CliError):
+
+    def __init__(self, argument: CliArgument, value: str):
+        self.argument = argument
+        message = f"Unexpected value '{value}' for argument: {argument.long}"
+        if self.argument.short:
+            message += f"/{argument.short}"
+        message += f". Accepted values: {self.argument.accepted_values}"
+        super().__init__(message)
+
+    def solve(self) -> list[str]:
+        global _cli_logger
+        args = [self.argument.long]
+        _cli_logger.critical(f"{self}")
+        value = prompt_user(f"Please provide a valid value for {self.argument.long}: ")
+        if value:
+            args.extend(value.split(" "))
+        return args
+
+
+from typing import Literal
+
+
+class CliArgument:
+    def __init__(
+        self,
+        long: str,
+        short: str | None = None,
+        default: any | None = None,
+        expect: Literal["one", "many"] = "one",
+        type: Callable[[str], any] | None = None,
+        required: bool = False,
+        accepted_values: list[str] | None = None,
+    ):
+        self.long = long
+        self.short = short
+        self.default = default
+        self.expect = expect
+        self.values = None
+        self.type = type
+        self.required = required
+        self.accepted_values = accepted_values
+        self._finalize()
+
+    def _finalize(self):
+        # prepare bool type handling
+        if self.type == bool:
+            if not self.accepted_values:
+                self.accepted_values = ["y", "yes", "n", "no", "true", "false"]
+            if self.default is None:
+                self.default = False
+        # wrap default values in array if needed
+        if not isinstance(self.default, list) and self.default is not None:
+            self.default = [self.default]
+
+    def _parse_bool_value(self, value: str) -> bool:
+        if value.lower() in ["y", "yes", "true"]:
+            return True
+        elif value.lower() in ["n", "no", "false"]:
+            return False
+        raise CliArgumentValueError(self, value)
+
+    def _validate_value(self, value: str):
+        if not self.accepted_values:
+            return
+        if value.lower() not in [v.lower() for v in self.accepted_values]:
+            raise CliArgumentValueError(self, value)
+
+    def _get_value(self) -> any | None:
+        # for bool type with no values, return default
+        if self.type == bool and not self.values:
+            return self.default[0] if self.expect == "one" else self.default
+        return (
+            None
+            if not self.values
+            else self.values[0] if self.expect == "one" else self.values
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "long": self.long,
+            "short": self.short,
+            "default": self.default,
+            "values": self.values,
+            "type": self.type,
+            "required": self.required,
+            "accepted_values": self.accepted_values,
+        }
+
+    def request_value(self) -> None:
+        choices = ["y", "yes", "n", "no"] if self.type == bool else self.accepted_values
+
+    def parse_value_from_args(self, args: list[str]) -> None:
+        if self.values is None:
+            self.values = []
+        elif self.expect == "one" and len(self.values) > 0:
+            raise CliArgumentError(self, "expected_one")
+        if not args:
+            # For bool type, set to True if no value provided
+            if self.type == bool:
+                self.values.append(True)
+            # Else, set to default if available
+            elif self.default is not None:
+                self.values.extend(self.default)
+        else:
+            # Parse provided values
+            for arg in args:
+                # Check validity
+                self._validate_value(arg)
+                # Prepare reader.
+                value_reader = str
+                if self.type == bool:
+                    value_reader = self._parse_bool_value
+                elif self.type is not None:
+                    value_reader = self.type
+                self.values.append(value_reader(arg))
+
+
+CLI_ARGUMENTS: list[CliArgument] = [
+    CliArgument(
+        "--print-args",
+        short="-p",
+        expect="many",
+        accepted_values=["full", "all"],
+        type=str,
+        default="all",
+    ),
+    CliArgument("--help", short="-h", type=bool),
+    CliArgument("--silent", short="-s", type=bool),
+    CliArgument("--confirm", short="-c", type=bool),
 ]
 
 
-class CliArgumentParser(argparse.ArgumentParser):
-    """ArgumentParser that raises exceptions instead of exiting."""
+class CliArgumentParser:
+
+    _logger: Logger.Logger = None
+    _config: Config.Config = None
+    _module: ModuleType = None
+    _simple_module_name: str = None
+    _module_name: str = None
+    _cli_args: dict[str, CliArgument] = dict()
+    _short_cli_args_mapping: dict[str, str] = dict()
 
     def __init__(
-        self, module: ModuleType, module_args: list[str] | None = None, *args, **kwargs
+        self, module: ModuleType, cli_arguments: list[CliArgument] | None = None
     ):
-        self.simple_module_name = module.__name__.split(".")[-1]
-        self.module_name = module.__name__
-        self.module = module
-        self.cli_params = dict()
-        self.module_params = dict()
-        self._init_args = module_args or []
-        self.hint = False
 
-        super().__init__(add_help=False, *args, **kwargs)
-        for arg in CLI_ARGUMENTS:
-            default = get_value_or_none(f"cli.{arg}", default=False)
-            self.add_argument(arg, default=default, action="store_true", cli=True)
+        self._module = module
+        self._simple_module_name = self._module.__name__.split(".")[-1]
+        self._module_name = self._module.__name__
 
-        build_parser_func = getattr(self.module, "build_parser")
-        build_parser_func(self)
-        self._consume_module_args()
-
-    def add_argument(self, long: str, cli: bool = False, **kwargs):
-        """Add argument with short and long form, passing through all argparse options."""
-
-        short_form = f"-{long[0]}"
-        # Check if short form is already used
-        if any(
-            p["short"] == short_form
-            for p in [*self.cli_params.values(), *self.module_params.values()]
-        ):
-            short_form = None  # Skip short form if conflict
-
-        long_form = f"--{long.replace('_', '-')}"
-        store = self.cli_params if cli else self.module_params
-        store[long] = {
-            "short": short_form,
-            "long": long_form,
-            "kwargs": kwargs,
-        }
-
-        # Add argument to argparse
-        if short_form:
-            super().add_argument(short_form, long_form, **kwargs)
-        else:
-            super().add_argument(long_form, **kwargs)
-
-    def module_arg(self, key: str):
-        from .config import ConfigPath
-        from .log import log
-
-        confirm_run = self.cli("confirm")
-        silent_run = self.cli("silent")
-        instant_run = self.cli("instant")
-        live_run = self.cli("live")
-
-        kwargs = self.module_params.get(key, {}).get("kwargs", {})
-        type = kwargs["type"] if "type" in list(kwargs.keys()) else None
-
-        argument_value = getattr(self.module_parsed, key, None)
-        is_file = type is not None and isinstance(
-            type(argument_value if argument_value is not None else ""), ConfigPath
+        self._config = Config.get().create(self._simple_module_name + "-module")
+        self._logger = Logger.get(
+            self._module_name + ".logger",
+            create_config_dict=Config.get("logger").to_dict(),
+            stream=sys.stdout,
         )
-        if is_file:
-            config_value = get_file_path(key)
+
+        self._cli_args = dict()
+        self._short_cli_args = dict()
+        self.add_args(*CLI_ARGUMENTS)
+
+        build_parser_func = getattr(self._module, "build_parser")
+        build_parser_func(self)
+
+    def print_args(self):
+        if "full" in self._get_arg("--print-args"):
+            self._logger.debug(
+                " CLI Arguments: ",
+                self._cli_args,
+                force_inline=lambda k: "accepted_values" in k,
+            )
+        elif "all" in self._get_arg("--print-args"):
+            self._logger.debug(
+                " CLI Arguments: ",
+                {
+                    k: v
+                    for k, v in self._cli_args.items()
+                    if v.values is not None and k != "--print-args"
+                },
+            )
         else:
-            config_value = get_value_or_none(key)
-        if not live_run:
-            argument_value = argument_value if argument_value else config_value
-        else:
-            if not self.hint:
-                log("{arr/}Leave inputs {hvl/(empty)} for {hul/default}")
-                self.hint = True
-            argument_value = prompt_for_arg(
-                key,
-                default=config_value,
-                is_file=is_file,
-                autoconfirm=not confirm_run,
-                stream=not instant_run,
-                silent=silent_run,
+            self._logger.debug(
+                " CLI Arguments: ",
+                {
+                    k: v
+                    for k, v in self._cli_args.items()
+                    if k[2:] in self._get_arg("--print-args")
+                },
+                force_inline=lambda k: "accepted_values" in k,
             )
 
-        if argument_value is not None and type is not None:
-            return type(argument_value)
-        return (
-            ConfigPath(str(Path.cwd() / argument_value)) if is_file else argument_value
-        )
+    def add_args(
+        self,
+        *arguments: CliArgument,
+    ):
+        for argument in arguments:
+            self._add_arg(argument)
 
-    def cli(self, flag: str) -> bool:
-        """Get CLI parsed arguments."""
-        return getattr(
-            self.cli_parsed, flag, get_value_or_none(f"cli.{flag}", default=False)
-        )
+    def _add_arg(
+        self,
+        argument: CliArgument,
+    ):
+        self._cli_args[argument.long] = argument
+        self._cli_args["--print-args"].accepted_values.append(argument.long[2:])
+        if argument.short:
+            if argument.short in self._cli_args:
+                raise CliError(f"Duplicate short argument {argument.short}")
+            elif not re.search(r"^-[a-zA-Z]$", argument.short):
+                raise CliError(
+                    f"Invalid short argument format {argument.short}. Only one letter allowed after '-'."
+                )
+            else:
+                self._short_cli_args_mapping[argument.short] = argument.long
 
-    def check_if_module_arg(self, arg: str) -> bool:
-        """Check if a module parameter exists."""
-        long_check = arg.startswith("--")
-        if long_check:
-            log("checking: " + arg[2:].replace("-", "_"))
-            return arg[2:].replace("-", "_") in list(self.module_params.keys())
-        else:
-            log("checking: " + arg[1:])
-            return any(arg[1:] == p["short"] for p in list(self.module_params.values()))
+    def get_arg(self, flag: str) -> any:
+        """Get argument by long form."""
+        return self._get_arg(flag)
 
-    # def check_if_module_arg(self, arg: str) -> bool:
-    #     """Check if a module parameter exists."""
-    #     long_check = arg.startswith("--")
-    #     if long_check:
-    #         log("checking: " + arg[2:].replace("-", "_"))
-    #         return arg[2:].replace("-", "_") in list(self.module_params.keys())
-    #     else:
-    #         log("checking: " + arg[1:])
-    #         return any(arg[1:] == p["short"] for p in list(self.module_params.values()))
+    def _get_arg(self, flag: str) -> any:
+        """Get argument by long form."""
+        if not flag.startswith("--"):
+            raise CliError(
+                f"Unexpected flag {flag}. Expected long form starting with '--'."
+            )
+        elif not flag in self._cli_args:
+            raise CliError(f"Unknown flag {flag}.")
+        return self._cli_args[flag]._get_value()
 
-    def _consume_module_args(self) -> None:
+    def parse_args(self, args: list[str] = []) -> None:
+        errors = self._parse_args(args)
+        if errors:
+            if self.get_arg("--silent"):
+                raise CliError(
+                    "CLI argument parsing failed in silent mode:\n/;_cross/;/ "
+                    + "\n/;_cross/;/ ".join([str(e) for e in errors])
+                )
+            while len(errors) > 0:
+                solved_args = []
+                while len(errors) > 0:
+                    solved_args.extend(errors.pop(0).solve())
+                errors = self._parse_args(solved_args)
+
+    def _parse_args(self, args: list[str] = []) -> list[CliError]:
         """Parse arguments."""
+        parsed_args = args.copy()
+        hits: list[str] = []
+        errors: list[CliError] = []
 
-        parsed = super().parse_args(self._init_args)
-        filtered = {
-            k: v for k, v in vars(parsed).items() if k in self.cli_params.keys()
-        }
-        self.cli_parsed = argparse.Namespace(**filtered)
-        filtered = {
-            k: v for k, v in vars(parsed).items() if k in self.module_params.keys()
-        }
-        self.module_parsed = argparse.Namespace(**filtered)
-        # pp_log(
-        #     {
-        #         "cli_parsed": vars(self.cli_parsed),
-        #         "module_parsed": vars(self.module_parsed),
-        #     }
-        # )
+        def consume_flag() -> Tuple[str, list[str]]:
+            from itertools import takewhile
 
-    def error(self, message):
-        """Raise exception instead of exiting."""
-        raise Exception(message)
+            nonlocal parsed_args
+            arg = parsed_args[0]
+            values = list(takewhile(lambda x: not x.startswith("-"), parsed_args[1:]))
+            parsed_args = parsed_args[len(values) + 1 :]
+            hits.append(arg)
+            return arg, values
+
+        def hit(argument: CliArgument) -> bool:
+            return argument.long in hits or argument.short in hits
+
+        while len(parsed_args) > 0:
+            try:
+                res = consume_flag()
+                flag = res[0]
+                values = res[1]
+                if not flag.startswith("--"):
+                    if len(flag) > 2 and values:
+                        raise CliError(
+                            f"Combinated short flags {flag} cannot have values."
+                        )
+                    for flag in flag[1:]:
+                        short_flag = "-" + flag
+                        if not short_flag in self._short_cli_args_mapping:
+                            raise CliError(f"Unknown short flag {short_flag}.")
+                        else:
+                            self._cli_args[
+                                self._short_cli_args_mapping[short_flag]
+                            ].parse_value_from_args(values)
+                else:
+                    if not flag in self._cli_args:
+                        raise CliError(f"Unknown flag {flag}.")
+                    self._cli_args[flag].parse_value_from_args(values)
+            except CliError as e:
+                errors.append(e)
+
+        # check required arguments
+        for required_arg in [
+            arg for arg in self._cli_args.values() if arg.required and not hit(arg)
+        ]:
+            try:
+                if required_arg._get_value() is None:
+                    raise CliArgumentError(required_arg, "required")
+            except CliError as e:
+                errors.append(e)
+
+        # check no-value arguments
+        for no_value_arg in [
+            arg
+            for arg in self._cli_args.values()
+            if arg.values is not None and len(arg.values) == 0
+        ]:
+            try:
+                if not no_value_arg in [
+                    e.argument for e in errors if isinstance(e, CliArgumentValueError)
+                ]:
+                    raise CliArgumentError(no_value_arg, "missing")
+            except CliError as e:
+                errors.append(e)
+
+        return errors

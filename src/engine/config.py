@@ -6,6 +6,7 @@ from glom import glom
 
 import src.engine.logger as Logger
 from src.utils import deep_merge_dicts
+import copy
 
 _global_config: GlobalConfig = None
 _default_logger: Logger.Logger = None
@@ -13,6 +14,11 @@ _config_logger: Logger.Logger = None
 
 _default_config_file = "config.json"
 _file_pattern = lambda prefix: f"config/{prefix}-{_default_config_file}"
+_file_path = lambda config: (
+    Path.cwd() / config._custom_config_path
+    if config._custom_config_path is not None
+    else Path.cwd() / _file_pattern(config._name)
+)
 
 
 def _silent_read_config_from_file(path: str | Path) -> dict:
@@ -41,32 +47,40 @@ def _write_config_to_file(path: str | Path, config: dict, silent=False) -> Path:
     try:
         write_path = Path(path)
         """Dump the current configuration to a file."""
+        write_path.parent.mkdir(parents=True, exist_ok=True)
         with open(write_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4)
     except Exception:
         if not silent:
-            _config_logger.error(f"Failed to write config to {write_path.absolute()}")
+            _config_logger.error(
+                f"Failed to write config file: {write_path.absolute()}"
+            )
         pass
     return {}
 
 
 def _update_config(_config: Config, trust="File", config_dict: dict = {}) -> dict:
     global _global_config
-
-    config_file = _read_config_from_file(_file_pattern(_config._name))
+    config_file = _read_config_from_file(_file_path(_config))
     _global_config_dict = _glom_get(
-        _global_config._config_dict.copy(), _config._name
-    ).copy()
+        copy.deepcopy(_global_config._config_dict), _config._name
+    )
 
-    merges = [_config._initial_config_dict.copy()]
+    merges = [
+        copy.deepcopy(
+            _config._config_dict
+            if _config._config_dict
+            else _config._initial_config_dict
+        ),
+    ]
     if trust == "file":
-        merges.append(config_dict.copy())
+        merges.append(copy.deepcopy(config_dict))
         merges.append(_global_config_dict)
         merges.append(config_file)
     elif trust == "dict":
         merges.append(_global_config_dict)
         merges.append(config_file)
-        merges.append(config_dict.copy())
+        merges.append(copy.deepcopy(config_dict))
     else:
         raise RuntimeError(f"Unknown trust source: {trust}")
     while len(merges) > 1:
@@ -81,9 +95,10 @@ def _glom_get(d: dict, path: str, default={}):
 
 class Config:
 
-    _name: str
-    _initial_config_dict: dict
-    _config_dict: dict
+    _name: str | None = None
+    _initial_config_dict: dict | None = None
+    _config_dict: dict | None = None
+    _custom_config_path: str | None = None
 
     def __init__(
         self,
@@ -93,7 +108,7 @@ class Config:
     ):
         global _config_logger
         self._name = re.sub(r"[.-]", "_", name.strip())
-        self._initial_config_dict = config_dict.copy()
+        self._initial_config_dict = copy.deepcopy(config_dict)
         self.reload(trust=trust, config_dict=config_dict)
         _config_logger.success(f"Config '{self._name}' initialized.")
 
@@ -106,8 +121,8 @@ class Config:
 
     def get(self, key: str = "", default=None) -> any | None:
         if key == "":
-            return self._config_dict.copy()
-        return _glom_get(self._config_dict.copy(), key, default=default)
+            return copy.deepcopy(self._config_dict)
+        return _glom_get(copy.deepcopy(self._config_dict), key, default=default)
 
     def get_path(self, key: str) -> Path:
         return Path(Path.cwd() / self.get(f"paths.{key}", ""))
@@ -127,10 +142,20 @@ class Config:
     def dump(self) -> None:
         """Dump the current configuration to a file."""
         global _config_logger
-        _write_config_to_file(_file_pattern(self._name), self._config_dict)
-        _config_logger.success(
-            f"Config {self._name} dumped to '{_file_pattern(self._name)}'."
-        )
+        _write_config_to_file(_file_path(self), self._config_dict)
+        _config_logger.success(f"Config {self._name} dumped to '{_file_path(self)}'.")
+
+    def delete_file(self) -> None:
+        """Delete the configuration file."""
+        global _config_logger
+        config_path = _file_path(self)
+        if config_path.is_file():
+            config_path.unlink()
+            _config_logger.success(f"Config file '{config_path.absolute()}' deleted.")
+        else:
+            _config_logger.error(
+                f"Failed to delete config file: '{config_path.absolute()}'."
+            )
 
     def merge(self) -> None:
         """Merge global config into this config."""
@@ -142,7 +167,7 @@ class Config:
         _config_logger.success(f"Config {self._name} merged in global.")
 
     def to_dict(self) -> dict:
-        return self._config_dict.copy()
+        return copy.deepcopy(self._config_dict)
 
 
 class GlobalConfig:
@@ -176,7 +201,7 @@ class GlobalConfig:
 
     def get(self, name: str = "") -> Config | dict:
         if name == "":
-            return self._config_dict.copy()
+            return copy.deepcopy(self._config_dict)
         if name not in self._cached_configs:
             raise RuntimeError(f"Config '{name}' not found in global.")
         return self._cached_configs[name]
@@ -221,7 +246,7 @@ def init():
 
     # Create logger configuration from logging's default and swap logger.
     _config_logger = Logger.get(
-        create_config_dict=_default_logger._config_dict.copy(),
+        create_config_dict=copy.deepcopy(_default_logger._config_dict),
         stream=_default_logger._stream,
     )
 

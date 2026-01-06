@@ -8,6 +8,14 @@ import sys
 from time import sleep
 from typing import TextIO, Tuple
 from glom import glom
+import src.engine.logger as Logger
+
+
+class KrakenError(Exception):
+    """Special exception to represent a kraken in the logger."""
+
+    pass
+
 
 _ANSI_CODES = {
     "r": [0],  # reset
@@ -120,7 +128,7 @@ def _detect_ansi_pattern(string: str) -> Tuple[str, str]:
 _default_config = {
     "animate": False,
     "flush_rate": [5, 15],
-    "max_inline": 120,
+    "max_inline": 160,
     "styles": {
         "sep": "cw;di",
         "obji": "cb;di",
@@ -253,12 +261,15 @@ class DataPrinter:
         self, v: any, force_inline=lambda k: False, compact=lambda k: False
     ) -> None:
         from src.engine.config import Config as Config
+        from src.engine.cli import CliArgument
 
         if isinstance(v, dict):
             self._write_dict(v, force_inline=force_inline, compact=compact)
         elif isinstance(v, list):
             self._write_list(v, force_inline=force_inline, compact=compact)
         elif isinstance(v, Config):
+            self._write_dict(v.to_dict(), force_inline=force_inline, compact=compact)
+        elif isinstance(v, CliArgument):
             self._write_dict(v.to_dict(), force_inline=force_inline, compact=compact)
         else:
             self._logger.write(self.decorate_value(v))
@@ -269,7 +280,7 @@ class Logger:
     def __init__(
         self,
         name="default",
-        create_config_dict: dict = _default_config,
+        create_config_dict: dict = {},
         stream: TextIO = sys.stdout,
     ):
         self._name = name
@@ -306,6 +317,10 @@ class Logger:
 
     def error(self, *args, **kwargs) -> None:
         args = [f"/;_cross/cr;/ ", *args]
+        self.print(*args, **kwargs)
+
+    def critical(self, *args, **kwargs) -> None:
+        args = [f"/;cr;bo//;_cross/;/ ", *args, "/;"]
         self.print(*args, **kwargs)
 
     def success(self, *args, **kwargs) -> None:
@@ -372,21 +387,10 @@ class Logger:
         def_stream = None
         if def_kwargs:
             self._wkwargs = kwargs.copy()
-            _loggers["default"]._dbg(
-                "start of Logger.write with wkwargs:",
-                args,
-                self._wkwargs,
-                enabled=False,
-            )
             self._indents = [""]
             self._current_path = ["root"]
 
             if "stream" in self._wkwargs.keys():
-                _loggers["default"]._dbg(
-                    "Logger.write overriding stream for this write call",
-                    self._wkwargs["stream"],
-                    enabled=False,
-                )
                 def_stream = self._stream
                 self._stream = self._wkwargs["stream"]
 
@@ -396,9 +400,6 @@ class Logger:
         )
         compact = self._wkwargs.get("compact", kwargs.get("compact", lambda k: False))
         process_ansi = self._wkwargs.get("ansi", kwargs.get("ansi", True))
-
-        if def_kwargs and instant:
-            self._dbg("Instant Logger.write started", enabled=True)
 
         for arg in args:
             if not isinstance(arg, str):
@@ -418,7 +419,7 @@ class Logger:
                         remaining = ansi[1] + remaining[len(ansi[0]) :]
                         # Do not let the kraken grow...
                         if loops > security_limit:
-                            raise RuntimeError(
+                            raise KrakenError(
                                 f"Pattern recursion limit exceeded. You may have an kraken growing in {remaining[0:100]}!"
                             )
                         # Continue to provide recursive patterns
@@ -464,18 +465,11 @@ class Logger:
                         sleep(random.uniform(0.01, 0.03))
 
         if def_kwargs:
-            if instant:
-                self._dbg("Instant Logger.write completed", enabled=True)
             self._stream.flush()
             self._indents = [""]
             self._wkwargs = None
             if def_stream is not None:
                 self._stream = def_stream
-            _loggers["default"]._dbg(
-                "end of Logger.write resetting wkwargs",
-                self._wkwargs,
-                enabled=False,
-            )
 
 
 _loggers: dict[str, Logger] = None
@@ -497,10 +491,13 @@ def get(
     if not name in _loggers:
         if stream is None:
             raise RuntimeError(f"Provide stream to create logger.")
+        # _loggers["default"].debug(f"Creating new logger: {name}")
         _loggers[name] = Logger(
             name=name,
             stream=stream,
-            create_config_dict=create_config_dict,
+            create_config_dict=(
+                create_config_dict if create_config_dict is not None else {}
+            ),
         )
     else:
         import src.engine.config as Config

@@ -1,20 +1,19 @@
 {
     "logger": {
-        "animate": false,
+        "animate": true,
         "flush_rate": [
             5,
             15
         ],
-        "max_inline": 120,
+        "max_inline": 160,
         "styles": {
-            "sep": "cw",
+            "sep": "cw;di",
             "obji": "cb;di",
             "objk": "cg;bo",
             "arri": "cb;di",
-            "str": "cw;it;di",
+            "str": "cw;it",
             "bool": "cc",
             "num": "cb",
-            "dbg": "cm",
             "unkn": "cr;di"
         },
         "debug": {

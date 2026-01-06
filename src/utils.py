@@ -10,7 +10,6 @@ Provides reusable functions for file handling, XML processing, and naming conven
 
 import xml.etree.ElementTree as ET
 from fnmatch import fnmatch
-from .log import log
 from pathlib import Path
 
 
@@ -167,12 +166,4 @@ def load_xml_file(file_path: Path) -> ET.Element | None:
     Returns:
         Root element of parsed XML, or None if error.
     """
-    try:
-        tree = ET.parse(file_path)
-        return tree.getroot()
-    except ET.ParseError as e:
-        log(f"{{err/Error parsing {file_path.name}: {e}}}")
-        return None
-    except OSError as e:
-        log(f"{{err/Error reading {file_path.name}: {e}}}")
-        return None
+    return ET.parse(file_path)

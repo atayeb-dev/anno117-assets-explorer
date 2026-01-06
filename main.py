@@ -19,13 +19,8 @@ import argparse
 import importlib
 from io import StringIO
 import sys
-from src.config import (
-    # load_global_config,
-    print_config_state,
-)
 import src.engine.config as Config
 import src.engine.logger as Logger
-from src.cli import CliArgumentParser
 
 
 # ============================================================
@@ -54,7 +49,7 @@ class LaunchError(Exception):
       - Interactive CLI
       ...
 /;cg;bo/Launch/; with /;cy/'--cli'/; for command-line interface.
-\n\033[01m©\033[0m atayeb 2025
+\n\x1b[01m©\x1b[0m atayeb 2025
 /;di/If my work made your day better, consider backing its creator./;
 ==
 """
@@ -69,13 +64,13 @@ class LaunchError(Exception):
 class ModuleDispatcher:
     def _interactive_prompt(self) -> int:
 
-        logger = Logger()
+        logger = Logger.get()
         logger.print("==")
         logger.print("Assets Explorer - Interactive CLI")
         logger.print(
             "Welcome! Type {hu/help} for commands ; {hu/exit} or {hu/bye} to quit."
         )
-        print_config_state()
+        # print_config_state()
         logger.print("==")
 
         while True:
@@ -119,21 +114,28 @@ class ModuleDispatcher:
             except KeyboardInterrupt:
                 logger.error(f"\nInterrupted!")
             except Exception as e:
-                logger.error(f"{e}")
+                handle_error(e)
 
-    def _invoke_module(self, module_name: str, module_args: list[str]) -> int | None:
-        logger = Logger()
+    def _invoke_module(
+        self,
+        module_name: str | None = None,
+        full_module_name: str | None = None,
+        module_args: list[str] = [],
+    ) -> int | None:
+        logger = Logger.get()
 
-        if not module_name or module_name.strip() == "":
-            logger.error(f"{{err/Module not found: {module_name}}}")
+        invoke_name = None
+        short_module_name = None
+        if full_module_name:
+            short_module_name = full_module_name.split(".")[-1]
+            invoke_name = full_module_name
+        else:
+            short_module_name = module_name
+            invoke_name = f"{CLI_PREFIX}{module_name}"
 
-        # shortcuts
-        module_short_name = module_name
-        if module_name in ["config", "cache"]:
-            module_name = f"{module_name}_manager"
-
-        module_name = f"{CLI_PREFIX}{module_name}"
-        mod = importlib.import_module(module_name)
+        if not invoke_name or invoke_name.strip() == "":
+            logger.error(f"{{err/Module not found: {invoke_name}}}")
+        mod = importlib.import_module(invoke_name)
         mod = importlib.reload(mod)  # Hot reload for development
 
         entry_point = getattr(mod, "run")
@@ -141,26 +143,21 @@ class ModuleDispatcher:
             logger.error(f"{{err/No entry point found in {module_name}}}")
             return None
 
-        parser = CliArgumentParser(mod, module_args=module_args)
-
-        help_run = parser.cli("help")
-        instant_run = parser.cli("instant")
-        live_run = parser.cli("live")
-        silent_run = parser.cli("silent")
-
         logger.print("==============================")
-        logger.print(f"Invoking module: {module_name}:", module_args)
-        if parser.cli("print_args"):
-            logger.print(
-                {
-                    "cli": vars(parser.cli_parsed),
-                    "module": vars(parser.module_parsed),
-                }
-            )
+        logger.print(f"Invoking module: {short_module_name}: ", module_args)
+        from src.engine.cli import CliArgumentParser
+
+        parser = CliArgumentParser(mod)
+        parser.parse_args(module_args)
+        help_run = parser.get_arg("--help")
+        silent_run = parser.get_arg("--silent")
+
+        if parser._get_arg("--print-args"):
+            parser.print_args()
 
         if help_run:
             if not hasattr(mod, "help"):
-                logger.error("{err/}Nothing can help you now...}")
+                logger.critical("Nothing can help you now...")
                 return 0
             else:
                 logger.print("{arr/}Asked for help")
@@ -170,7 +167,7 @@ class ModuleDispatcher:
                     help_text = help_func(module_args)
                 except Exception:
                     help_text = help_func()
-                logger.print(help_text, stream=not instant_run)
+                logger.print(help_text)
                 return 0
         else:
             try:
@@ -178,13 +175,14 @@ class ModuleDispatcher:
                 if isinstance(out, int):
                     return out
                 elif isinstance(out, tuple):
-                    if live_run and not silent_run:
-                        logger.print(f"{{arr/}}{out[0]}")
+                    # if live_run and not silent_run:
+                    #     logger.print(f"{{arr/}}{out[0]}")
                     return out[1]
-
-            except Exception as e:
-                logger.error(f"{{err/}}Error in module {{fn/{module_short_name}}}: {e}")
-                return 1
+            except BaseException as e:
+                logger.critical(
+                    f"The following error occured while invoking {full_module_name}:"
+                )
+                raise e
 
 
 class MainArgumentParser(argparse.ArgumentParser):
@@ -195,59 +193,46 @@ class MainArgumentParser(argparse.ArgumentParser):
         raise Exception(message)
 
 
-def unit_test():
-    logger_config = Config.get("logger")
-    logger = Logger.get()
-    config_dict = {
-        "flush_rate": [15, 20],
-        "styles": {
-            "str": "cw;it;di",
-            "sep": "cw",
-        },
-    }
-    logger_config.reload(
-        config_dict=config_dict,
-        trust="dict",
-    )
-    Config.get().create("test").get()
-    logger.success(
-        "Updated logger config, testing object print:",
-    )
-    logger.prompt(
-        Config.get("test").get(),
-    )
-    logger.print()
-    logger_config.reload()
-    key = ""
-    test_array = None
-    for k, v in Config.get("test").get().items():
-        if isinstance(v, list) and (
-            test_array is None or len(str(v)) < len(str(test_array))
-        ):
-            test_array = v
-            key = k
-    logger.success(
-        "Reverted logger config, testing inline print with compact mode: ",
-        {key: test_array},
-        force_inline=lambda k: True,
-        compact=lambda k: True,
-    )
-    logger.success(
-        "Now testing array compact mode: ",
-        [test_array, test_array, test_array, test_array],
-        compact=lambda k: True,
-    )
-    logger.prompt(
-        "Testing config type with compact mode: ",
-        Config.get("logger"),
-        compact=lambda k: True,
-        force_inline=lambda k: "styles" in k,
-    )
-    logger.prompt("Testing unknown type: ", (1, 2, 3))
-    logger.error("This is a test error message.")
-    logger.success("This is a test success message.")
-    logger.prompt("This is a test prompt message.")
-    logger.debug("This is a test debug message.")
+def handle_error(e: BaseException) -> None:
+    if isinstance(e, LaunchError):
+        logger = Logger.get(
+            "special",
+            stream=sys.stdout,
+            create_config_dict={
+                "animate": True,
+                "flush_rate": [1, 3],
+            },
+        )
+        logger.write(f"{e}")
+    elif isinstance(e, Logger.KrakenError):
+        handle_kraken_error(e)
+    elif isinstance(e, KeyboardInterrupt):
+        Logger.get("default").critical(f"Interrupted!")
+    else:
+        handle_uncaught_exception(e)
+
+
+def handle_kraken_error(e: Logger.KrakenError) -> None:
+    stream = StringIO()
+    kraken = "/;" + "/;".join(f"{e}".split("/;")[1:])
+    Logger.get("default").write(kraken, ansi=False, stream=stream)
+    Logger.get("default").critical(f"{e}".split("/;")[0][:-1] + ": ", end="/;cm;bo/")
+    Logger.get("default").write(stream.getvalue(), ansi=False)
+    Logger.get("default").print("/;")
+    handle_uncaught_exception(e)
+
+
+def handle_uncaught_exception(e: Exception):
+    import traceback
+
+    logger = Logger.get("traceback")
+    if not isinstance(e, Logger.KrakenError) and e.args:
+        logger.critical(f"{e} ({type(e).__name__})")
+    for frame in traceback.extract_tb(e.__traceback__)[::-1]:
+        logger.debug(
+            {frame.name: f"{frame.filename}:{frame.lineno}"},
+            force_inline=lambda k: True,
+        )
 
 
 def main(args: list[str] | None = None) -> int:
@@ -268,40 +253,30 @@ def main(args: list[str] | None = None) -> int:
     Logger.init()
     Config.init()
 
-    parser = MainArgumentParser(argparse.ArgumentParser, add_help=False)
-    parser.add_argument("--cli", nargs=argparse.REMAINDER)
-    parser.add_argument("-h", "--help", action="store_true")
-
-    # tests
-    if "--unit-test" in sys.argv:
-        unit_test()
-        sys.argv.remove("--unit-test")
-    if "--kraken" in sys.argv:
-        try:
-            Logger.get().print("/;__kraken/;/ ")
-        except Exception as e:
-            stream = StringIO()
-            kraken = "/;" + "/;".join(f"{e}".split("/;")[1:])
-            Logger.get("default").write(kraken, ansi=False, stream=stream)
-            Logger.get("default").error(f"{e}".split("/;")[0][:-1], end=": /;cm;bo/")
-            Logger.get("default").write(stream.getvalue(), ansi=False)
-            Logger.get("default").print("/;")
-        sys.argv.remove("--kraken")
-
-    Config.get("logger").merge()
-    Logger.get().print(
-        Config.get().get(),
-        force_inline=lambda k: "logger.styles" in k,
+    # Setup traceback logger
+    Logger.get(
+        name="traceback",
+        stream=sys.stderr,
+        create_config_dict={"styles": {"objk": "cr", "str": "cm"}},
     )
+
+    parser = MainArgumentParser(argparse.ArgumentParser, add_help=False)
+    parser.add_argument("-h", "--help", action="store_true")
+    parser.add_argument("--cli", nargs=argparse.REMAINDER)
+    Config.get("logger").merge()
     Config.get().dump()
 
     try:
-        parsed = parser.parse_args(args)
-
-        if parsed.help:
+        if "--unit-test" in sys.argv:
+            Logger.get().prompt("Starting unit test module")
+            sys.argv.remove("--unit-test")
+            ModuleDispatcher()._invoke_module(
+                full_module_name="src.engine.unit_test", module_args=sys.argv[1:]
+            )
+        elif "--help" in sys.argv or "-h" in sys.argv:
             raise LaunchError()
-
-        if parsed.cli is not None:
+        elif "--cli" in sys.argv:
+            parsed = parser.parse_args(args)
             dispatcher = ModuleDispatcher()
             if len(parsed.cli) == 0:
                 return dispatcher._interactive_prompt()
@@ -311,23 +286,11 @@ def main(args: list[str] | None = None) -> int:
 
             result = dispatcher._invoke_module(module_name, module_args)
             return result or 0
-
         else:
             raise LaunchError()
 
-    except LaunchError as e:
-        logger = Logger.get(
-            "special",
-            stream=sys.stdout,
-            create_config_dict={
-                "animate": True,
-                "flush_rate": [1, 3],
-            },
-        )
-        logger.write(f"{e}")
-        return 1
-    except Exception as e:
-        print(f"{e}")
+    except BaseException as e:
+        handle_error(e)
         return 1
 
 
