@@ -18,11 +18,16 @@ from types import ModuleType
 from tkinter import Tk, filedialog
 from typing import Callable, Tuple
 
-_cli_logger: Logger.Logger = Logger.get(
-    "cli.logger",
-    stream=sys.stdout,
-    create_config_dict=Config.get("logger").to_dict(),
-)
+_cli_logger: Logger = None
+
+
+def init():
+    global _cli_logger
+    _cli_logger = Logger.get(
+        "cli",
+        stream=sys.stdout,
+        create_config_dict={"animate": True},
+    )
 
 
 def _select_file_gui(title: str = "Select a file") -> str:
@@ -370,7 +375,6 @@ CLI_ARGUMENTS: list[CliArgument] = [
 
 class CliArgumentParser:
 
-    _logger: Logger.Logger = None
     _config: Config.Config = None
     _module: ModuleType = None
     _simple_module_name: str = None
@@ -387,11 +391,6 @@ class CliArgumentParser:
         self._module_name = self._module.__name__
 
         self._config = Config.get().create(self._simple_module_name + "-module")
-        self._logger = Logger.get(
-            self._module_name + ".logger",
-            create_config_dict=Config.get("logger").to_dict(),
-            stream=sys.stdout,
-        )
 
         self._cli_args = dict()
         self._short_cli_args = dict()
@@ -401,14 +400,15 @@ class CliArgumentParser:
         build_parser_func(self)
 
     def print_args(self):
+        global _cli_logger
         if "all" in self._get_arg("--print-args"):
-            self._logger.debug(
+            _cli_logger.debug(
                 " CLI Arguments: ",
                 self._cli_args,
                 force_inline=lambda k: "accepted_values" in k,
             )
         elif "provided" in self._get_arg("--print-args"):
-            self._logger.debug(
+            _cli_logger.debug(
                 " CLI Arguments: ",
                 {
                     k: v
@@ -417,7 +417,7 @@ class CliArgumentParser:
                 },
             )
         else:
-            self._logger.debug(
+            _cli_logger.debug(
                 " CLI Arguments: ",
                 {
                     k: v

@@ -4,10 +4,10 @@ import src.engine.logger as Logger
 import src.engine.config as Config
 import src.engine.cli as Cli
 
-unit_test_logger = Logger.get(
-    "unit-test-logger",
+_unit_test_logger = Logger.get(
+    "unit-test",
     stream=sys.stdout,
-    create_config_dict=Config.get("logger").to_dict(),
+    create_config_dict={"animate": True},
 )
 
 
@@ -29,24 +29,27 @@ def build_parser(parser: Cli.CliArgumentParser) -> None:
 
 
 def run(parser: Cli.CliArgumentParser):
-    global unit_test_logger
+    global _unit_test_logger
     modes = parser._get_arg("--modes")
     if "prompt" in modes:
-        unit_test_logger.error("This is a test error message.")
-        unit_test_logger.success("This is a test success message.")
-        unit_test_logger.prompt("This is a test prompt message.")
-        unit_test_logger.debug("This is a test debug message.")
+        _unit_test_logger.error("This is a test error message.")
+        _unit_test_logger.success("This is a test success message.")
+        _unit_test_logger.prompt("This is a test prompt message.")
+        _unit_test_logger.debug("This is a test debug message.")
     if "config" in modes:
-        test_logger_config = Config.get("unit-test-logger")
-        test_logger_config._custom_config_path = "tests/unit-test-logger.json"
-        unit_test_logger.prompt("Starting config tests...")
+        Logger.get("config").get_config().reload(
+            config_dict={"verbose": True}, trust="dict"
+        )
+        logger_config = _unit_test_logger.get_config()
+        logger_config._custom_config_path = "tests/unit-test-logger.json"
+        _unit_test_logger.prompt("Starting config tests...")
 
         def print_config(message: str):
-            nonlocal test_logger_config
-            global unit_test_logger
-            unit_test_logger.success(
+            nonlocal logger_config
+            global _unit_test_logger
+            _unit_test_logger.success(
                 message,
-                test_logger_config,
+                logger_config,
                 force_inline=lambda k: "styles" in k,
             )
 
@@ -59,27 +62,28 @@ def run(parser: Cli.CliArgumentParser):
                 "sep": "cw",
             },
         }
-        test_logger_config.dump()
-        unit_test_logger.prompt("Reloading config trusting dict: ", config_dict)
-        test_logger_config.reload(
+        logger_config.dump()
+        _unit_test_logger.prompt("Reloading config trusting dict: ", config_dict)
+        logger_config.reload(
             config_dict=config_dict,
             trust="dict",
         )
         print_config("Reloaded config trusting dict: ")
-        test_logger_config._custom_config_path = "tests/unknown.json"
-        test_logger_config.reload()
+        logger_config._custom_config_path = "tests/unknown.json"
+        logger_config.reload()
         print_config("Reloaded config trusting file: ")
-        test_logger_config._custom_config_path = "tests/unit-test-logger.json"
-        test_logger_config.reload()
+        logger_config._custom_config_path = "tests/unit-test-logger.json"
+        logger_config.reload()
         print_config("Reloaded config trusting file: ")
-        test_logger_config.delete_file()
-        unit_test_logger.success("Done config tests.")
+        logger_config.delete_file()
+        Logger.get("config").get_config().reload()
+        _unit_test_logger.success("Done config tests.")
     if "data-print" in modes:
 
         def print_test_data(data: any):
             modes = parser._get_arg("--data-print-modes")
             if modes:
-                unit_test_logger.prompt(
+                _unit_test_logger.prompt(
                     "Printing with: ",
                     modes,
                     data,
@@ -87,7 +91,7 @@ def run(parser: Cli.CliArgumentParser):
                     force_inline=lambda k: "inline" in modes,
                 )
             else:
-                unit_test_logger.prompt("Printing: ", data)
+                _unit_test_logger.prompt("Printing: ", data)
 
         if parser._get_arg("--test-data"):
             for read_path in parser._get_arg("--test-data"):
@@ -96,17 +100,17 @@ def run(parser: Cli.CliArgumentParser):
 
                     with open(Path.cwd() / read_path, "r", encoding="utf-8") as f:
                         test_data = json.load(f)
-                    unit_test_logger.success(f"Loaded test data from {read_path}")
+                    _unit_test_logger.success(f"Loaded test data from {read_path}")
                     print_test_data(test_data)
                 except Exception as e:
-                    unit_test_logger.critical(
+                    _unit_test_logger.critical(
                         f"Failed to load test data from: {read_path} ({type(e).__name__})"
                     )
         else:
-            unit_test_logger.prompt(
+            _unit_test_logger.prompt(
                 "No test data provided. Printing logger configuration:"
             )
-            print_test_data(Config.get("unit-test-logger"))
-        unit_test_logger.success("Done data print tests.")
+            print_test_data(_unit_test_logger.get_config())
+        _unit_test_logger.success("Done data print tests.")
     if "kraken" in modes:
         Logger.get().print("/;__kraken/;/ ")

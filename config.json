@@ -1,17 +1,87 @@
 {
-    "logger": {
-        "animate": true,
+    "logger_default": {
+        "animate": false,
         "flush_rate": [
             5,
             15
         ],
         "max_inline": 160,
+        "verbose": true,
         "styles": {
             "sep": "cw;di",
             "obji": "cb;di",
             "objk": "cg;bo",
             "arri": "cb;di",
             "str": "cw;it",
+            "bool": "cc",
+            "num": "cb",
+            "unkn": "cr;di"
+        },
+        "debug": {
+            "enable": false,
+            "print_indent_chars": true
+        }
+    },
+    "logger_config": {
+        "animate": false,
+        "flush_rate": [
+            5,
+            15
+        ],
+        "max_inline": 160,
+        "verbose": false,
+        "styles": {
+            "sep": "cw;di",
+            "obji": "cb;di",
+            "objk": "cg;bo",
+            "arri": "cb;di",
+            "str": "cw;it",
+            "bool": "cc",
+            "num": "cb",
+            "unkn": "cr;di"
+        },
+        "debug": {
+            "enable": false,
+            "print_indent_chars": true
+        }
+    },
+    "logger_cli": {
+        "animate": true,
+        "flush_rate": [
+            5,
+            15
+        ],
+        "max_inline": 160,
+        "verbose": true,
+        "styles": {
+            "sep": "cw;di",
+            "obji": "cb;di",
+            "objk": "cg;bo",
+            "arri": "cb;di",
+            "str": "cw;it",
+            "bool": "cc",
+            "num": "cb",
+            "unkn": "cr;di"
+        },
+        "debug": {
+            "enable": false,
+            "print_indent_chars": true
+        }
+    },
+    "logger_traceback": {
+        "animate": false,
+        "flush_rate": [
+            5,
+            15
+        ],
+        "max_inline": 160,
+        "verbose": true,
+        "styles": {
+            "sep": "cw;di",
+            "obji": "cb;di",
+            "objk": "cr",
+            "arri": "cb;di",
+            "str": "cm",
             "bool": "cc",
             "num": "cb",
             "unkn": "cr;di"

@@ -33,10 +33,14 @@ def _read_config_from_file(path: str | Path) -> dict:
     global _config_logger
     try:
         config = _silent_read_config_from_file(path)
-        _config_logger.success(f"Loaded config from {path.absolute()}")
+        _config_logger.success(
+            f"Loaded config from {path.absolute()}", verbose_only=True
+        )
         return config
     except Exception as e:
-        _config_logger.error(f"Failed to load config file: {path.absolute()}")
+        _config_logger.error(
+            f"Failed to load config file: {path.absolute()}", verbose_only=True
+        )
     return {}
 
 
@@ -104,7 +108,7 @@ class Config:
         self._name = re.sub(r"[.-]", "_", name.strip())
         self._initial_config_dict = copy.deepcopy(config_dict)
         self.reload(trust=trust, config_dict=config_dict)
-        _config_logger.success(f"Config '{self._name}' initialized.")
+        _config_logger.success(f"Config '{self._name}' initialized.", verbose_only=True)
 
     def reload(
         self,
@@ -195,7 +199,7 @@ class GlobalConfig:
 
     def get(self, name: str = "") -> Config | dict:
         if name == "":
-            return copy.deepcopy(self._config_dict)
+            raise RuntimeError(f"Please provide config name.")
         if name not in self._cached_configs:
             raise RuntimeError(f"Config '{name}' not found in global.")
         return self._cached_configs[name]
@@ -238,9 +242,13 @@ def init():
     # Load the beast.
     _global_config = GlobalConfig()
 
-    # Create logger configuration from logging's default and swap logger.
+    # Load config for default logger.
+    _default_logger.load_config()
+
+    # Create non-verbose config logger and swap logger.
     _config_logger = Logger.get(
-        create_config_dict=copy.deepcopy(_default_logger._config_dict),
+        "config",
+        create_config_dict={"verbose": False},
         stream=_default_logger._stream,
     )
 

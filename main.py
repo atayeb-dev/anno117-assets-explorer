@@ -18,9 +18,11 @@ Architecture:
 import argparse
 import importlib
 from io import StringIO
+from pathlib import Path
 import sys
 import src.engine.config as Config
 import src.engine.logger as Logger
+import src.engine.cli as Cli
 
 
 # ============================================================
@@ -250,8 +252,11 @@ def main(args: list[str] | None = None) -> int:
     """
     global _current_module
     _current_module = "main"
+
+    # Init engine
     Logger.init()
     Config.init()
+    Cli.init()
 
     # Setup traceback logger
     Logger.get(
@@ -260,11 +265,15 @@ def main(args: list[str] | None = None) -> int:
         create_config_dict={"styles": {"objk": "cr", "str": "cm"}},
     )
 
+    # Merge all logger configs and dump final config to initialize global config file
+    if not (Path.cwd() / Config._default_config_file).exists():
+        for logger in Logger._loggers.values():
+            logger.get_config().merge()
+        Config.get().dump()
+
     parser = MainArgumentParser(argparse.ArgumentParser, add_help=False)
     parser.add_argument("-h", "--help", action="store_true")
     parser.add_argument("--cli", nargs=argparse.REMAINDER)
-    Config.get("logger").merge()
-    Config.get().dump()
 
     try:
         if "--unit-test" in sys.argv:

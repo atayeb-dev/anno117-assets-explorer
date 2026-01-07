@@ -1,6 +1,7 @@
 # ============================================================
 # ANSI Logging Utility
 # ============================================================
+import copy
 from io import StringIO
 import random
 import re
@@ -129,6 +130,7 @@ _default_config = {
     "animate": False,
     "flush_rate": [5, 15],
     "max_inline": 160,
+    "verbose": True,
     "styles": {
         "sep": "cw;di",
         "obji": "cb;di",
@@ -287,21 +289,31 @@ class Logger:
         self._data_printer = DataPrinter(self)
         from src.utils import deep_merge_dicts
 
-        self._config_dict = _default_config
+        if name == "default":
+            self._config_dict = _default_config
+        else:
+            self._config_dict = _loggers["default"].get_config().to_dict()
         deep_merge_dicts(self._config_dict, create_config_dict)
         self._stream = stream
-        # default logger is not tied to a condfiguration.
-        if name == "default":
-            self._config = None  # will need to be initialized. required for boot
-        else:
-            self.init_config()
+        self._config = None
+        # Default logger config will be loaded after init
+        if name != "default":
+            self.load_config()
 
-    def init_config(self) -> None:
+    def get_config_name(self) -> str:
+        return f"logger-{self._name}"
 
-        # Avoid circular import
+    def load_config(self):
+        if self._config is not None:
+            raise RuntimeError("Logger config already loaded.")
         from src.engine.config import get as Config
 
-        self._config = Config().create(self._name, config_dict=self._config_dict)
+        self._config = Config().create(
+            self.get_config_name(), config_dict=self._config_dict
+        )
+
+    def get_config(self):
+        return self._config
 
     def _dbg(self, *args, enabled=True) -> None:
         if enabled:
@@ -400,6 +412,12 @@ class Logger:
         )
         compact = self._wkwargs.get("compact", kwargs.get("compact", lambda k: False))
         process_ansi = self._wkwargs.get("ansi", kwargs.get("ansi", True))
+        verbose_only = self._wkwargs.get(
+            "verbose_only", kwargs.get("verbose_only", False)
+        )
+
+        if verbose_only and not self._safe_get_config("verbose"):
+            return
 
         for arg in args:
             if not isinstance(arg, str):
@@ -481,7 +499,7 @@ def init():
 
 
 def get(
-    name: str = "logger",
+    name: str = "default",
     stream: TextIO = None,
     create_config_dict: dict = None,
 ) -> Logger:
@@ -491,7 +509,6 @@ def get(
     if not name in _loggers:
         if stream is None:
             raise RuntimeError(f"Provide stream to create logger.")
-        # _loggers["default"].debug(f"Creating new logger: {name}")
         _loggers[name] = Logger(
             name=name,
             stream=stream,
@@ -503,7 +520,9 @@ def get(
         import src.engine.config as Config
 
         if create_config_dict is not None:
-            Config.get(name).reload(trust="dict", config_dict=create_config_dict)
+            _loggers[name].get_config().reload(
+                trust="dict", config_dict=create_config_dict
+            )
         if stream is not None:
             _loggers[name]._stream = stream
     return _loggers[name]
