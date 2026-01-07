@@ -18,7 +18,7 @@ from types import ModuleType
 from tkinter import Tk, filedialog
 from typing import Callable, Tuple
 
-_cli_logger: Logger = None
+_cli_logger: Logger.Logger = None
 
 
 def init():
@@ -29,81 +29,6 @@ def init():
         stream=sys.stdout,
         create_config_dict={"animate": True},
     )
-
-
-def _select_file_gui(title: str = "Select a file") -> str:
-    """Open file picker with tkinter (improved for interactive mode)."""
-    root = Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)  # Force au premier plan
-    root.update()  # Force le rendu
-
-    filepath = filedialog.askopenfilename(title=title)
-
-    root.destroy()
-    root.update()  # Nettoie après fermeture
-    return filepath
-
-
-def select_file(
-    key: str = "Select a file",
-    default: str = "",
-    autoconfirm: bool = False,
-    stream: bool = False,
-    silent: bool = False,
-):
-    """Ask user to input file path."""
-    # from src.config import ConfigPath, get_bool_value
-
-    # if autoconfirm and default is not None:
-    #     return ConfigPath(
-    #         prompt(key, default=default, autoconfirm=True, stream=stream, silent=silent)
-    #     )
-
-    # if get_bool_value("cli.gui_file_chooser"):
-    #     Logger.get().prompt(f"Using GUI file chooser for: {key}")
-    #     file = _select_file_gui(key)
-    #     if file == "":
-    #         file = default
-    #     return ConfigPath(file)
-    # return ConfigPath(
-    #     prompt(key, default=default, autoconfirm=False, stream=stream, silent=silent)
-    # )
-
-
-def prompt_user_for_file() -> str:
-    """Prompt user to select a file using GUI."""
-    global _cli_logger
-    _cli_logger.prompt("Please select a file using the file chooser dialog...")
-    file_path = _select_file_gui()
-    if not file_path:
-        _cli_logger.error("No file selected.")
-    else:
-        _cli_logger.success(f"Selected file: {file_path}")
-    return file_path
-
-
-def prompt_user(message: str, default: str = None, is_file: bool = False) -> str:
-    """Prompt user for input with a message."""
-    global _cli_logger
-
-    _cli_logger.prompt(f"{message}", end="")
-    input_value = input().strip()
-
-    if input_value == "":
-        input_value = default
-
-    _cli_logger.clean_lines(1)
-    _cli_logger.prompt(f"{message}", end="", instant=True)
-
-    if input_value is None or input_value is False:
-        _cli_logger.error(f"{input_value}", instant=True)
-    elif input_value == "":
-        _cli_logger.print(f"/;cw;di/(empty)/;", instant=True)
-    else:
-        _cli_logger.success(f"{input_value}", instant=True)
-
-    return input_value
 
 
 # ============================================================
@@ -127,6 +52,7 @@ class CliArgumentError(CliError):
         self.argument = argument
         argument_name = lambda arg: arg.long + (f"/{arg.short}" if arg.short else "")
         self.type = type
+        message = f"Unexpected argument error: {type}"
         if type == "required":
             message = f"Missing required: {argument_name(argument)}"
         elif type == "missing_value":
@@ -137,7 +63,7 @@ class CliArgumentError(CliError):
             message = f"Unexpected value(s) {argument._invalid_raw_values()} for: {argument_name(argument)}, accepted values: {argument.accepted_values}"
         super().__init__(message)
 
-    def solve(self) -> list[str]:
+    def solve(self):
         global _cli_logger
         if self.type == "required":
             self.argument.prompt_for_value(
@@ -157,9 +83,27 @@ class CliArgumentError(CliError):
             self.argument.prompt_for_value(
                 f"Please provide valid value(s) for argument {self.argument.long} (accepted: {self.argument.accepted_values}): "
             )
+        elif self.type.startswith("not_a_file"):
+            self.argument.reset()
+            return self.argument.prompt_for_value(
+                f"Please provide valid file(s) path(s) for argument {self.argument.long}: "
+            )
+        elif self.type.startswith("not_a_dir"):
+            self.argument.reset()
+            return self.argument.prompt_for_value(
+                f"Please provide valid directory(ies) path(s) for argument {self.argument.long}: "
+            )
 
 
 from typing import Literal
+
+
+class CliFile(Path):
+    pass
+
+
+class CliDir(Path):
+    pass
 
 
 class CliArgument:
@@ -196,6 +140,9 @@ class CliArgument:
         # wrap default values in array if needed
         if not isinstance(self.default, list) and self.default is not None:
             self.default = [self.default]
+        # Check Path type
+        if self.type == Path:
+            raise CliError("Use CliFile or CliDir for Path type arguments.")
 
     def to_dict(self) -> dict:
         return self.__dict__
@@ -228,8 +175,14 @@ class CliArgument:
                 raise CliArgumentError(self, "missing_value")
             elif len(self._invalid_raw_values()) > 0:
                 raise CliArgumentError(self, "unexpected_value")
-            elif self.type == Path:
-                file_path = Path.cwd() / self._raw_values[0]
+            elif self.type == CliFile:
+                file_path = CliFile(Path.cwd() / self._raw_values[0])
+                if not file_path.is_file():
+                    raise CliArgumentError(self, f"not_a_file: {file_path.absolute()}")
+            elif self.type == CliDir:
+                dir_path = CliDir(Path.cwd() / self._raw_values[0])
+                if not dir_path.is_dir():
+                    raise CliArgumentError(self, f"not_a_dir: {dir_path.absolute()}")
 
     def _parse_bool_value(self, value: str) -> bool:
         if value.lower() in ["y", "yes", "true"]:
@@ -276,16 +229,48 @@ class CliArgument:
             else self.values[0] if self.expect == "one" else self.values
         )
 
+    def _select_file_gui(self, title: str) -> str:
+        root = Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        root.update()
+
+        def sanitize(s: str) -> str:
+            return f"'{s}'" if s else None
+
+        # FIXME: tkinter can't open multi-dir dialog
+        if self.type == CliFile:
+            if self.expect == "one":
+                filepath = filedialog.askopenfilename(title=title)
+                filepath = sanitize(filepath)
+            else:
+                filepaths = filedialog.askopenfilenames(title=title)
+                filepath = (
+                    " ".join(sanitize(filepath) for filepath in filepaths)
+                    if filepaths
+                    else None
+                )
+        elif self.type == CliDir:
+            filepath = filedialog.askdirectory(title=title)
+            filepath = sanitize(filepath)
+
+        root.destroy()
+        root.update()
+        _cli_logger.print()  # New line after GUI dialog
+        return filepath
+
     def prompt_user(self, message: str) -> str:
         """Prompt user for input with a message."""
         global _cli_logger
 
         _cli_logger.prompt(f"{message}", end="")
-        input_value = input().strip()
 
+        if self.type in [CliFile, CliDir]:
+            input_value = self._select_file_gui(title=message)
+        else:
+            input_value = input().strip()
         if input_value == "":
             input_value = self.default
-
         _cli_logger.clean_lines(1)
         _cli_logger.prompt(f"{message}", end="", instant=True)
 
@@ -429,11 +414,7 @@ class CliArgumentParser:
                     + "\n/;_cross/;/ ".join([str(e) for e in errors])
                 )
             while len(errors) > 0:
-                # solved_args = []
-                # while len(errors) > 0:
                 errors.pop(0).solve()
-                # solved_args.extend(errors.pop(0).solve())
-                # errors = self._parse_args(solved_args)
 
     def _parse_args(self, args: list[str] = []) -> list[CliError]:
         """Parse arguments."""

@@ -1,4 +1,6 @@
 import json
+from pathlib import Path
+from pathlib import Path
 import sys
 import src.engine.logger as Logger
 import src.engine.config as Config
@@ -21,7 +23,8 @@ def build_parser(parser: Cli.CliArgumentParser) -> None:
             required=True,
             accepted_values=["prompt", "config", "data-print", "kraken"],
         ),
-        Cli.CliArgument("--test-data", type=str, expect="many"),
+        Cli.CliArgument("--test-data", type=Cli.CliFile, expect="many"),
+        Cli.CliArgument("--test-data-dir", type=Cli.CliDir, expect="many"),
         Cli.CliArgument(
             "--data-print-modes", expect="many", accepted_values=["inline", "compact"]
         ),
