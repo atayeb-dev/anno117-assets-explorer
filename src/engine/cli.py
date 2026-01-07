@@ -52,22 +52,22 @@ def select_file(
     silent: bool = False,
 ):
     """Ask user to input file path."""
-    from src.config import ConfigPath, get_bool_value
+    # from src.config import ConfigPath, get_bool_value
 
-    if autoconfirm and default is not None:
-        return ConfigPath(
-            prompt(key, default=default, autoconfirm=True, stream=stream, silent=silent)
-        )
+    # if autoconfirm and default is not None:
+    #     return ConfigPath(
+    #         prompt(key, default=default, autoconfirm=True, stream=stream, silent=silent)
+    #     )
 
-    if get_bool_value("cli.gui_file_chooser"):
-        Logger.get().prompt(f"Using GUI file chooser for: {key}")
-        file = _select_file_gui(key)
-        if file == "":
-            file = default
-        return ConfigPath(file)
-    return ConfigPath(
-        prompt(key, default=default, autoconfirm=False, stream=stream, silent=silent)
-    )
+    # if get_bool_value("cli.gui_file_chooser"):
+    #     Logger.get().prompt(f"Using GUI file chooser for: {key}")
+    #     file = _select_file_gui(key)
+    #     if file == "":
+    #         file = default
+    #     return ConfigPath(file)
+    # return ConfigPath(
+    #     prompt(key, default=default, autoconfirm=False, stream=stream, silent=silent)
+    # )
 
 
 def prompt(
