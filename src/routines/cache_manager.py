@@ -19,7 +19,7 @@ def build_parser(parser: CliArgumentParser) -> None:
         action="store_true",
         help="Clear entire cache",
     )
-    parser.add_argument(
+    parser.add_argument( 
         "--clear-not-found",
         action="store_true",
         help="Clear only not-found GUIDs",

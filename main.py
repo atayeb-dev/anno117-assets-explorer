@@ -209,7 +209,7 @@ def handle_error(e: BaseException) -> None:
     elif isinstance(e, Logger.KrakenError):
         handle_kraken_error(e)
     elif isinstance(e, KeyboardInterrupt):
-        Logger.get("default").critical(f"Interrupted!")
+        Logger.get().critical(f"Interrupted!")
     else:
         handle_uncaught_exception(e)
 
@@ -217,10 +217,10 @@ def handle_error(e: BaseException) -> None:
 def handle_kraken_error(e: Logger.KrakenError) -> None:
     stream = StringIO()
     kraken = "/;" + "/;".join(f"{e}".split("/;")[1:])
-    Logger.get("default").write(kraken, ansi=False, stream=stream)
-    Logger.get("default").critical(f"{e}".split("/;")[0][:-1] + ": ", end="/;cm;bo/")
-    Logger.get("default").write(stream.getvalue(), ansi=False)
-    Logger.get("default").print("/;")
+    Logger.get().write(kraken, ansi=False, stream=stream)
+    Logger.get().critical(f"{e}".split("/;")[0][:-1] + ": ", end="/;cm;bo/")
+    Logger.get().write(stream.getvalue(), ansi=False)
+    Logger.get().print("/;")
     handle_uncaught_exception(e)
 
 

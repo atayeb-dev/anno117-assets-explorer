@@ -93,11 +93,6 @@ def _glom_get(d: dict, path: str, default={}):
 
 class Config:
 
-    _name: str | None = None
-    _initial_config_dict: dict | None = None
-    _config_dict: dict | None = None
-    _custom_config_path: str | None = None
-
     def __init__(
         self,
         name: str,
@@ -107,6 +102,9 @@ class Config:
         global _config_logger
         self._name = re.sub(r"[.-]", "_", name.strip())
         self._initial_config_dict = copy.deepcopy(config_dict)
+        self._custom_config_path = None
+        self._config_dict = {}
+
         self.reload(trust=trust, config_dict=config_dict)
         _config_logger.success(f"Config '{self._name}' initialized.", verbose_only=True)
 
@@ -176,13 +174,18 @@ class GlobalConfig:
         self._name = "global_config"
         try:
             self._config_dict = _silent_read_config_from_file(_default_config_file)
-            _default_logger.success(f"Loaded global config from {_default_config_file}")
+            _config_logger.success(
+                f"Loaded global config from {_default_config_file}", verbose_only=True
+            )
         except FileNotFoundError:
-            _default_logger.error(
-                f"No global config file found at {_default_config_file}"
+            _config_logger.error(
+                f"No global config file found at {_default_config_file}",
+                verbose_only=True,
             )
         except Exception as e:
-            _default_logger.error(f"Failed to initialize global config: {e}")
+            _config_logger.error(
+                f"Failed to initialize global config: {e}", verbose_only=True
+            )
         if self._config_dict is None:
             self._config_dict = {}
 
@@ -234,9 +237,12 @@ def init():
     global _config_logger
 
     # Keep default loader we may need it.
-    _default_logger = Logger.get("default")
+    _default_logger = Logger.get()
 
-    # Use the default logger during load
+    # Remove the default logger's verbosity for first-time loading.
+    _default_logger._config_dict["verbose"] = False
+
+    # Use the default logger for global config loading.
     _config_logger = _default_logger
 
     # Load the beast.
@@ -251,6 +257,11 @@ def init():
         create_config_dict={"verbose": False},
         stream=_default_logger._stream,
     )
+
+    # Reset default logger to verbose mode.
+    _default_logger.get_config().reload(config_dict={"verbose": True}, trust="dict")
+    # Reset default logger to configurated one if any.
+    _default_logger.get_config().reload()
 
 
 def get(name: str = "") -> Config | GlobalConfig:

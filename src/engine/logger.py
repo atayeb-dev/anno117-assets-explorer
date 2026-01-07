@@ -132,6 +132,7 @@ _default_config = {
     "max_inline": 160,
     "verbose": True,
     "styles": {
+        "enable": True,
         "sep": "cw;di",
         "obji": "cb;di",
         "objk": "cg;bo",
@@ -143,22 +144,36 @@ _default_config = {
     },
     "debug": {
         "enable": False,
-        "print_indent_chars": True,
+        "print_indent_chars": False,
     },
 }
 
 
 class DataPrinter:
 
-    _logger: Logger
-    _default_inline = lambda self, dl: len(self._logger._indents[-1]) + len(
-        str(dl)
-    ) < self._logger._safe_get_config("max_inline")
-
     def __init__(self, logger: Logger):
         self._logger = logger
 
+    def _default_inline(self, dl: dict | list) -> bool:
+        # Check we are checking from the inline-checker logger itself
+        if self._logger._name == "inline-checker":
+            return True
+        # Create a temporary logger to measure length bypassing config using default name in the first place
+        logger = Logger(
+            stream=StringIO(),
+            create_config_dict={"styles": {"enable": False}},
+        )
+        logger._name = "inline-checker"
+        # Write the data to the temporary logger forcing inline mode
+        logger.write(dl, ansi=False, force_inline=lambda k: True)
+        # Check we have the remaining space to inline
+        return len(self._logger._indents[-1]) + len(
+            logger._stream.getvalue()
+        ) < self._logger._safe_get_config("max_inline")
+
     def build_simple_style(self, style: str, text: str) -> str:
+        if not self._logger._safe_get_config("styles.enable"):
+            return text
         style_config = self._logger._safe_get_config(f"styles.{style}")
         if style_config is None:
             return text
@@ -181,10 +196,11 @@ class DataPrinter:
         elif decoration == "comma":
             return build("sep", ",")
         elif decoration == "item":
-            if isinstance(path[-1], int):
-                return build("arri", f" {str(path[-1])} ")
-            else:
-                return f" /;_arrow/{style_config("obji")};//; "
+            if self._logger._safe_get_config("styles.enable"):
+                if isinstance(path[-1], int):
+                    return build("arri", f" {str(path[-1])} ")
+                else:
+                    return f" /;_arrow/{style_config("obji")};//; "
         elif decoration == "key":
             return build("objk", str(path[-1]) + build("sep", ":"))
         return ""
@@ -285,18 +301,26 @@ class Logger:
         create_config_dict: dict = {},
         stream: TextIO = sys.stdout,
     ):
+
+        self._indents: list[str] = [""]
+        self._indents_buffer: TextIO = StringIO()
+        self._wkwargs: dict = None
+        self._current_path: list[str | int] = ["root"]
         self._name = name
         self._data_printer = DataPrinter(self)
+        self._stream = stream
+        self._config = None
+
         from src.utils import deep_merge_dicts
 
         if name == "default":
             self._config_dict = _default_config
         else:
             self._config_dict = _loggers["default"].get_config().to_dict()
+
         deep_merge_dicts(self._config_dict, create_config_dict)
-        self._stream = stream
-        self._config = None
-        # Default logger config will be loaded after init
+
+        # Default logger config loading is deffered to manual load_config() call.
         if name != "default":
             self.load_config()
 
@@ -357,12 +381,6 @@ class Logger:
         glom(self._config_dict, key) if self._config is None else self._config.get(key)
     )
 
-    _indents: list[str] = [""]
-    _indents_buffer: TextIO = StringIO()
-    _print_indents_char: bool = False
-    _wkwargs: dict = None
-    _current_path: list[str | int] = ["root"]
-
     def _indent(self) -> None:
         indents_char = self._indents_buffer.getvalue()
         indents_char = re.sub(
@@ -378,7 +396,7 @@ class Logger:
         indents_char = self._indents[-1]
 
         if len(self._indents) > 1:
-            if self._print_indents_char:
+            if self._safe_get_config("debug.print_indent_chars"):
                 self._stream.write(indents_char)
             else:
                 self._stream.write(indent_char * len(indents_char))
@@ -389,6 +407,9 @@ class Logger:
         self._indents_buffer.seek(0)
         self._indents_buffer.truncate(0)
         self._indents_buffer.write(indents_char)
+
+    def _get_wkwargs(self, key, default: any, **kwargs) -> dict:
+        return self._wkwargs.get(key, kwargs.get(key, default))
 
     def write(self, *args, **kwargs) -> None:
 
@@ -406,15 +427,11 @@ class Logger:
                 def_stream = self._stream
                 self._stream = self._wkwargs["stream"]
 
-        instant = self._wkwargs.get("instant", kwargs.get("instant", False))
-        force_inline = self._wkwargs.get(
-            "force_inline", kwargs.get("force_inline", lambda k: False)
-        )
-        compact = self._wkwargs.get("compact", kwargs.get("compact", lambda k: False))
-        process_ansi = self._wkwargs.get("ansi", kwargs.get("ansi", True))
-        verbose_only = self._wkwargs.get(
-            "verbose_only", kwargs.get("verbose_only", False)
-        )
+        instant = self._get_wkwargs("instant", False, **kwargs)
+        force_inline = self._get_wkwargs("force_inline", lambda k: False, **kwargs)
+        compact = self._get_wkwargs("compact", lambda k: False, **kwargs)
+        process_ansi = self._get_wkwargs("ansi", True, **kwargs)
+        verbose_only = self._get_wkwargs("verbose_only", False, **kwargs)
 
         if verbose_only and not self._safe_get_config("verbose"):
             return

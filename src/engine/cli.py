@@ -23,6 +23,7 @@ _cli_logger: Logger = None
 
 def init():
     global _cli_logger
+    # create default animated logger for CLI
     _cli_logger = Logger.get(
         "cli",
         stream=sys.stdout,
@@ -70,93 +71,19 @@ def select_file(
     # )
 
 
-def prompt(
-    key: str = None,
-    default: str = "",
-    autoconfirm: bool = False,
-    silent=False,
-    ex: bool = False,
-    ex_type: str = "none",
-) -> str:
-    """Ask user to input text."""
-    logger = Logger.get()
-    out_confirm = lambda instant=False: logger.prompt(
-        f"Please confirm /;cy/[{key}]/; (/;_arrow/cg;bo;/ /;cw;di/{default}/;): ",
-        end="",
-        instant=instant,
-    )
-    out_provide_ex = lambda instant=False: logger.prompt(
-        f"Please provide {ex_type} /;cy/[{key}]/; (/;_arrow/cg;bo;/ /;cw;di/{default}/;): ",
-        end="",
-        instant=instant,
-    )
-    out_autoconfirm = lambda instant=False: logger.prompt(
-        f"Provided [{key}]: ",
-        end="",
-        instant=instant,
-    )
-
-    input_value = ""
-    if autoconfirm:
-        if not silent:
-            out_autoconfirm()
-        input_value = default
+def prompt_user_for_file() -> str:
+    """Prompt user to select a file using GUI."""
+    global _cli_logger
+    _cli_logger.prompt("Please select a file using the file chooser dialog...")
+    file_path = _select_file_gui()
+    if not file_path:
+        _cli_logger.error("No file selected.")
     else:
-        if ex:
-            # out_debug_ex()
-            out_provide_ex()
-        else:
-            out_confirm()
-
-        input_value = input().strip()
-        logger.clean_lines(1)
-        if ex:
-            out_provide_ex(True)
-        else:
-            out_confirm(True)
-
-    if input_value == "":
-        input_value = default
-
-    if input_value is None or input_value is False:
-        logger.error(f"{input_value}")
-    elif input_value == "":
-        logger.print(f"/;cw;di/(empty)/;")
-    else:
-        logger.success(f"{input_value}")
-    return input_value
+        _cli_logger.success(f"Selected file: {file_path}")
+    return file_path
 
 
-def prompt_for_arg(
-    key: str = None,
-    default=None,
-    is_file: bool = False,
-    autoconfirm: bool = False,
-    silent: bool = False,
-    ex: bool = False,
-    ex_type: str = "none",
-) -> str:
-    if is_file:
-        return select_file(
-            key,
-            default=default,
-            autoconfirm=autoconfirm,
-            silent=silent,
-            ex=ex,
-            ex_type=ex_type,
-        )
-    else:
-        return prompt(
-            key,
-            default=default,
-            autoconfirm=autoconfirm,
-            silent=silent,
-            ex=ex,
-            ex_type=ex_type,
-        )
-
-
-def prompt_user(message: str, default: str = None) -> str:
+def prompt_user(message: str, default: str = None, is_file: bool = False) -> str:
     """Prompt user for input with a message."""
     global _cli_logger
 
@@ -210,15 +137,6 @@ class CliArgumentError(CliError):
             message = f"Unexpected value(s) {argument._invalid_raw_values()} for: {argument_name(argument)}, accepted values: {argument.accepted_values}"
         super().__init__(message)
 
-    def solve_too_many_values(self) -> list[str]:
-        global _cli_logger
-        args = [self.argument.long]
-        _cli_logger.critical(f"{self}")
-        value = prompt_user(f"Please provide only one value for {self.argument.long}: ")
-        if value:
-            args.append(value)
-        return args
-
     def solve(self) -> list[str]:
         global _cli_logger
         if self.type == "required":
@@ -230,8 +148,12 @@ class CliArgumentError(CliError):
                 f"Please provide a value for argument {self.argument.long}: "
             )
         elif self.type == "too_many_values":
-            return self.solve_too_many_values()
+            self.argument.reset()
+            return self.argument.prompt_for_value(
+                f"Please provide only one value for {self.argument.long}: "
+            )
         elif self.type == "unexpected_value":
+            self.argument.clean_invalid_values()
             self.argument.prompt_for_value(
                 f"Please provide valid value(s) for argument {self.argument.long} (accepted: {self.argument.accepted_values}): "
             )
@@ -255,16 +177,16 @@ class CliArgument:
         self.short = short
         self.default = default
         self.expect = expect
-        self.values = None
-        self._raw_values = None
         self.type = type
         self.required = required
         self.accepted_values = accepted_values
+
+        self.values: list[any] | None = None
+        self._raw_values: list[str] | None = None
+        self.provided: bool = False
         self._finalize()
 
     def _finalize(self):
-        # indicate not provided.
-        self.provided = False
         # prepare bool type handling
         if self.type == bool:
             if not self.accepted_values:
@@ -275,6 +197,9 @@ class CliArgument:
         if not isinstance(self.default, list) and self.default is not None:
             self.default = [self.default]
 
+    def to_dict(self) -> dict:
+        return self.__dict__
+
     def _invalid_raw_values(self) -> list[str]:
         return (
             [v for v in self._raw_values if v not in self.accepted_values]
@@ -282,17 +207,29 @@ class CliArgument:
             else []
         )
 
+    def reset(self) -> None:
+        self.provided = False
+        self.values = None
+        self._raw_values = None
+
+    def clean_invalid_values(self) -> None:
+        self._raw_values = [
+            v for v in self._raw_values if v not in self._invalid_raw_values()
+        ]
+
     def _validate(self):
         if not self.provided:
             if self.required:
                 raise CliArgumentError(self, "required")
         else:
-            if self.expect == "one" and len(self._raw_values) > 0:
+            if self.expect == "one" and len(self._raw_values) > 1:
                 raise CliArgumentError(self, "too_many_values")
-            elif self.provided and len(self._raw_values) == 0 and self.default is None:
+            elif len(self._raw_values) == 0 and self.default is None:
                 raise CliArgumentError(self, "missing_value")
-            elif self.provided and len(self._invalid_raw_values()) > 0:
+            elif len(self._invalid_raw_values()) > 0:
                 raise CliArgumentError(self, "unexpected_value")
+            elif self.type == Path:
+                file_path = Path.cwd() / self._raw_values[0]
 
     def _parse_bool_value(self, value: str) -> bool:
         if value.lower() in ["y", "yes", "true"]:
@@ -307,6 +244,9 @@ class CliArgument:
             return
         self.values = []
         if len(self._raw_values) == 0:
+            _cli_logger.debug(
+                f"No values provided for {self.long}, using default: {self.default}"
+            )
             # For bool type, set to True if no value provided
             if self.type == bool:
                 self.values.append(True)
@@ -319,7 +259,9 @@ class CliArgument:
                 # Prepare reader.
                 value_reader = str
                 if self.type == bool:
-                    value_reader = self._parse_bool_value
+                    value_reader = lambda v: self._parse_bool_value(v)
+                elif self.type == Path:
+                    value_reader = lambda v: Path.cwd() / v
                 elif self.type is not None:
                     value_reader = self.type
                 self.values.append(value_reader(value))
@@ -334,20 +276,39 @@ class CliArgument:
             else self.values[0] if self.expect == "one" else self.values
         )
 
-    def to_dict(self) -> dict:
-        return self.__dict__
+    def prompt_user(self, message: str) -> str:
+        """Prompt user for input with a message."""
+        global _cli_logger
+
+        _cli_logger.prompt(f"{message}", end="")
+        input_value = input().strip()
+
+        if input_value == "":
+            input_value = self.default
+
+        _cli_logger.clean_lines(1)
+        _cli_logger.prompt(f"{message}", end="", instant=True)
+
+        if input_value is None or (
+            self.type == bool and not self._parse_bool_value(input_value)
+        ):
+            _cli_logger.error(f"{input_value}", instant=True)
+        elif input_value == "":
+            _cli_logger.print(f"/;cw;di/(empty)/;", instant=True)
+        else:
+            _cli_logger.success(f"{input_value}", instant=True)
+
+        return input_value
 
     def prompt_for_value(self, message) -> None:
-        raw_value = prompt_user(message)
+        raw_value = self.prompt_user(message)
         try:
             if raw_value:
                 import shlex
 
                 self.store_raw_values(shlex.split(raw_value))
             elif not self.required:
-                self.provided = False
-                self.values = None
-                self._raw_values = None
+                self.reset()
             self._validate()
             self._parse_final_values()
         except CliArgumentError as e:
@@ -355,7 +316,9 @@ class CliArgument:
 
     def store_raw_values(self, args: list[str]) -> None:
         self.provided = True
-        self._raw_values = [*args]
+        if self._raw_values is None:
+            self._raw_values = []
+        self._raw_values.extend(args)
 
 
 CLI_ARGUMENTS: list[CliArgument] = [
@@ -375,13 +338,6 @@ CLI_ARGUMENTS: list[CliArgument] = [
 
 class CliArgumentParser:
 
-    _config: Config.Config = None
-    _module: ModuleType = None
-    _simple_module_name: str = None
-    _module_name: str = None
-    _cli_args: dict[str, CliArgument] = dict()
-    _short_cli_args_mapping: dict[str, str] = dict()
-
     def __init__(
         self, module: ModuleType, cli_arguments: list[CliArgument] | None = None
     ):
@@ -389,11 +345,10 @@ class CliArgumentParser:
         self._module = module
         self._simple_module_name = self._module.__name__.split(".")[-1]
         self._module_name = self._module.__name__
-
         self._config = Config.get().create(self._simple_module_name + "-module")
+        self._cli_args = dict[str, CliArgument]()
+        self._short_cli_args_mapping = dict[str, str]()
 
-        self._cli_args = dict()
-        self._short_cli_args = dict()
         self.add_args(*CLI_ARGUMENTS)
 
         build_parser_func = getattr(self._module, "build_parser")
@@ -415,6 +370,7 @@ class CliArgumentParser:
                     for k, v in self._cli_args.items()
                     if v.provided and k != "--print-args"
                 },
+                force_inline=lambda k: "accepted_values" in k,
             )
         else:
             _cli_logger.debug(

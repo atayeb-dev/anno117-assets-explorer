@@ -8,6 +8,7 @@
         "max_inline": 160,
         "verbose": true,
         "styles": {
+            "enable": true,
             "sep": "cw;di",
             "obji": "cb;di",
             "objk": "cg;bo",
@@ -19,7 +20,7 @@
         },
         "debug": {
             "enable": false,
-            "print_indent_chars": true
+            "print_indent_chars": false
         }
     },
     "logger_config": {
@@ -31,6 +32,7 @@
         "max_inline": 160,
         "verbose": false,
         "styles": {
+            "enable": true,
             "sep": "cw;di",
             "obji": "cb;di",
             "objk": "cg;bo",
@@ -42,7 +44,7 @@
         },
         "debug": {
             "enable": false,
-            "print_indent_chars": true
+            "print_indent_chars": false
         }
     },
     "logger_cli": {
@@ -54,6 +56,7 @@
         "max_inline": 160,
         "verbose": true,
         "styles": {
+            "enable": true,
             "sep": "cw;di",
             "obji": "cb;di",
             "objk": "cg;bo",
@@ -65,7 +68,7 @@
         },
         "debug": {
             "enable": false,
-            "print_indent_chars": true
+            "print_indent_chars": false
         }
     },
     "logger_traceback": {
@@ -77,6 +80,7 @@
         "max_inline": 160,
         "verbose": true,
         "styles": {
+            "enable": true,
             "sep": "cw;di",
             "obji": "cb;di",
             "objk": "cr",
@@ -88,7 +92,7 @@
         },
         "debug": {
             "enable": false,
-            "print_indent_chars": true
+            "print_indent_chars": false
         }
     }
 }

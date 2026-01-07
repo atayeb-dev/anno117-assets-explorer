@@ -78,6 +78,7 @@ def run(parser: Cli.CliArgumentParser):
         logger_config.delete_file()
         Logger.get("config").get_config().reload()
         _unit_test_logger.success("Done config tests.")
+
     if "data-print" in modes:
 
         def print_test_data(data: any):
