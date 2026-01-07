@@ -13,11 +13,11 @@ _default_logger: Logger.Logger = None
 _config_logger: Logger.Logger = None
 
 _default_config_file = "config.json"
-_file_pattern = lambda prefix: f"config/{prefix}-{_default_config_file}"
+_file_pattern = lambda prefix: f"{prefix}_{_default_config_file}"
 _file_path = lambda config: (
     Path.cwd() / config._custom_config_path
     if config._custom_config_path is not None
-    else Path.cwd() / _file_pattern(config._name)
+    else Path.cwd() / "config" / _file_pattern(config._name)
 )
 
 
@@ -89,6 +89,10 @@ def _update_config(_config: Config, trust="File", config_dict: dict = {}) -> dic
 
 def _glom_get(d: dict, path: str, default={}):
     return glom(d, path, default=default)
+
+
+class ConfigError(Exception):
+    pass
 
 
 class Config:
@@ -196,15 +200,15 @@ class GlobalConfig:
         trust: str = "file",
     ) -> Config:
         if not name or name in self._cached_configs:
-            raise RuntimeError("Config name must be unique and non-empty.")
+            raise ConfigError("Config name must be unique and non-empty.")
         self._cached_configs[name] = Config(name, config_dict=config_dict, trust=trust)
         return self._cached_configs[name]
 
     def get(self, name: str = "") -> Config | dict:
         if name == "":
-            raise RuntimeError(f"Please provide config name.")
+            raise ConfigError(f"Please provide config name.")
         if name not in self._cached_configs:
-            raise RuntimeError(f"Config '{name}' not found in global.")
+            raise ConfigError(f"Config '{name}' not found in global.")
         return self._cached_configs[name]
 
     def dump(self, name: str = "") -> None:

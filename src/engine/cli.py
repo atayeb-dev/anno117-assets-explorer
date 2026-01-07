@@ -46,6 +46,10 @@ class CliError(Exception):
         return []
 
 
+class CliHelpRequested(CliError):
+    pass
+
+
 class CliArgumentError(CliError):
 
     def __init__(self, argument: CliArgument, type: str):
@@ -79,7 +83,7 @@ class CliArgumentError(CliError):
                 f"Please provide only one value for {self.argument.long}: "
             )
         elif self.type == "unexpected_value":
-            self.argument.clean_invalid_values()
+            self.argument.clean_invalid_values()  # FIXME: maybe use reset instead, see with usage what fits better
             self.argument.prompt_for_value(
                 f"Please provide valid value(s) for argument {self.argument.long} (accepted: {self.argument.accepted_values}): "
             )
@@ -107,6 +111,9 @@ class CliDir(Path):
 
 
 class CliArgument:
+
+    _parser: CliArgumentParser
+
     def __init__(
         self,
         long: str,
@@ -154,6 +161,18 @@ class CliArgument:
             else []
         )
 
+    def read_raw_from_config(self) -> None:
+        config_value = self._parser._module._config.get(self.long)
+        if config_value is not None:
+            import shlex
+
+            self._raw_values = (
+                [str(c) for c in config_value]
+                if isinstance(config_value, list)
+                else shlex.split(config_value)
+            )
+            self.provided = True
+
     def reset(self) -> None:
         self.provided = False
         self.values = None
@@ -164,7 +183,9 @@ class CliArgument:
             v for v in self._raw_values if v not in self._invalid_raw_values()
         ]
 
-    def _validate(self):
+    def _validate(self, read_config: bool = True) -> None:
+        if not self.provided and read_config:
+            self.read_raw_from_config()
         if not self.provided:
             if self.required:
                 raise CliArgumentError(self, "required")
@@ -197,9 +218,6 @@ class CliArgument:
             return
         self.values = []
         if len(self._raw_values) == 0:
-            _cli_logger.debug(
-                f"No values provided for {self.long}, using default: {self.default}"
-            )
             # For bool type, set to True if no value provided
             if self.type == bool:
                 self.values.append(True)
@@ -218,6 +236,8 @@ class CliArgument:
                 elif self.type is not None:
                     value_reader = self.type
                 self.values.append(value_reader(value))
+        if self.long == "--help" and self._get_value():
+            raise CliHelpRequested("Help requested")
 
     def _get_value(self) -> any | None:
         # for bool type with no values, return default
@@ -238,21 +258,33 @@ class CliArgument:
         def sanitize(s: str) -> str:
             return f"'{s}'" if s else None
 
-        # FIXME: tkinter can't open multi-dir dialog
-        if self.type == CliFile:
-            if self.expect == "one":
-                filepath = filedialog.askopenfilename(title=title)
-                filepath = sanitize(filepath)
-            else:
-                filepaths = filedialog.askopenfilenames(title=title)
-                filepath = (
-                    " ".join(sanitize(filepath) for filepath in filepaths)
-                    if filepaths
-                    else None
+        if self.expect == "one":
+            if self.type == CliFile:
+                filepath = sanitize(
+                    filedialog.askopenfilename(title=f"{title} (single file)")
                 )
-        elif self.type == CliDir:
-            filepath = filedialog.askdirectory(title=title)
-            filepath = sanitize(filepath)
+            else:
+                filepath = sanitize(
+                    filedialog.askdirectory(title=f"{title} (single directory)")
+                )
+        else:
+            if self.type == CliFile:
+                filepaths = filedialog.askopenfilenames(
+                    title=f"{title} (multiple files)"
+                )
+            elif self.type == CliDir:
+                filepaths = []
+                loop = 0
+                while one_file_path := filedialog.askdirectory(
+                    title=f"{title} (multiple directories, {loop} selected, cancel to finish)"
+                ):
+                    loop += 1
+                    filepaths.append(one_file_path)
+            filepath = (
+                " ".join(sanitize(filepath) for filepath in filepaths)
+                if filepaths
+                else None
+            )
 
         root.destroy()
         root.update()
@@ -265,7 +297,9 @@ class CliArgument:
 
         _cli_logger.prompt(f"{message}", end="")
 
-        if self.type in [CliFile, CliDir]:
+        if self.type in [CliFile, CliDir] and self._parser._module._config.get(
+            "cli.gui_file_dialogs", False
+        ):
             input_value = self._select_file_gui(title=message)
         else:
             input_value = input().strip()
@@ -294,7 +328,7 @@ class CliArgument:
                 self.store_raw_values(shlex.split(raw_value))
             elif not self.required:
                 self.reset()
-            self._validate()
+            self._validate(read_config=False)
             self._parse_final_values()
         except CliArgumentError as e:
             e.solve()
@@ -323,21 +357,11 @@ CLI_ARGUMENTS: list[CliArgument] = [
 
 class CliArgumentParser:
 
-    def __init__(
-        self, module: ModuleType, cli_arguments: list[CliArgument] | None = None
-    ):
-
+    def __init__(self, module: CliModule):
         self._module = module
-        self._simple_module_name = self._module.__name__.split(".")[-1]
-        self._module_name = self._module.__name__
-        self._config = Config.get().create(self._simple_module_name + "-module")
         self._cli_args = dict[str, CliArgument]()
         self._short_cli_args_mapping = dict[str, str]()
-
         self.add_args(*CLI_ARGUMENTS)
-
-        build_parser_func = getattr(self._module, "build_parser")
-        build_parser_func(self)
 
     def print_args(self):
         global _cli_logger
@@ -373,6 +397,7 @@ class CliArgumentParser:
         *arguments: CliArgument,
     ):
         for argument in arguments:
+            argument._parser = self
             self._add_arg(argument)
 
     def _add_arg(
@@ -463,6 +488,88 @@ class CliArgumentParser:
                 argument._validate()
                 argument._parse_final_values()
             except CliError as e:
+                if isinstance(e, CliHelpRequested):
+                    raise e
                 errors.append(e)
 
         return errors
+
+
+class CliModule:
+    """
+    Abstract base class for CLI modules.
+
+    Provides common functionality for parsing arguments and executing module logic.
+    Subclasses should override build_parser() and run() methods.
+    """
+
+    def __init__(self):
+        """Initialize CLI module with arguments."""
+        import sys
+
+        module = sys.modules[self.__class__.__module__]
+        self._module: ModuleType = module
+        self._simple_module_name: str = self._module.__name__.split(".")[-1]
+        self._module_name: str = self._module.__name__
+        config_name: str = self._simple_module_name + "-module"
+        try:
+            self._config = Config.get(config_name)
+        except Config.ConfigError:
+            self._config = Config.get().create(config_name)
+        self._parser = CliArgumentParser(self)
+        self.prepare()
+
+    def help(self) -> str | None:
+        """Return help text for the module."""
+        return None
+
+    def add_args(self, *arguments: CliArgument) -> None:
+        """Add CLI arguments to the parser."""
+        if self._parser is None:
+            raise CliError("Parser not initialized yet.")
+        self._parser.add_args(*arguments)
+
+    def get_arg(self, flag: str) -> any:
+        """Get argument value by long flag."""
+        if self._parser is None:
+            raise CliError("Parser not initialized yet.")
+        return self._parser.get_arg(flag)
+
+    def prepare(self) -> None:
+        """
+        Hook for subclasses to register CLI arguments.
+        Override this method to add custom arguments.
+        """
+        pass
+
+    def run(self) -> int | None:
+        """
+        Hook for subclasses to implement module logic.
+        Override this method to implement custom behavior.
+
+        Args:
+            parser: The CliArgumentParser instance with parsed arguments.
+
+        Returns:
+            Exit code (0 on success, non-zero on failure).
+        """
+        raise NotImplementedError("Subclasses must implement run() method")
+
+    def execute(self, module_args: list[str] = []) -> int:
+        """Execute the module: parse arguments and run."""
+        try:
+            for a in self._parser._cli_args.values():
+                a.reset()
+            self._config.reload()
+            self._parser.parse_args(module_args)
+        except CliHelpRequested:
+            if help_text := self.help():
+                _cli_logger.prompt("Help requested!")
+                _cli_logger.print(help_text)
+            else:
+                _cli_logger.critical("Nothing can help you now...")
+            return 0
+        if self.get_arg("--print-args"):
+            self._parser.print_args()
+        result = self.run()
+        return result if isinstance(result, int) else 0

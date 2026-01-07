@@ -219,7 +219,7 @@ class DataPrinter:
     def _write_dict(
         self, d: dict, force_inline=lambda k: False, compact=lambda k: False
     ) -> None:
-        self._logger.write(self.decorate("start", type="dict"))
+        self._logger._write(self.decorate("start", type="dict"))
         self._logger._indent()
         inline = self._default_inline(d) or force_inline(self.full_current_path())
         inlining = inline
@@ -233,24 +233,24 @@ class DataPrinter:
             if not inlining:
                 self._logger._new_line(" ")
             if not inline and not compacting:
-                self._logger.write(self.decorate("item"))
-            self._logger.write(self.decorate("key"))
+                self._logger._write(self.decorate("item"))
+            self._logger._write(self.decorate("key"))
             if not compacting:
-                self._logger.write(" ")
+                self._logger._write(" ")
             self._write_value(item, force_inline=force_inline, compact=compact)
             if not last:
-                self._logger.write(self.decorate("comma"))
+                self._logger._write(self.decorate("comma"))
                 if not compacting:
-                    self._logger.write(" ")
+                    self._logger._write(" ")
             self._logger._current_path.pop()
             inlining = inline
-        self._logger.write(self.decorate("end", type="dict"))
+        self._logger._write(self.decorate("end", type="dict"))
         self._logger._dindent()
 
     def _write_list(
         self, l: list, force_inline=lambda k: False, compact=lambda k: False
     ) -> None:
-        self._logger.write(self.decorate("start", type="list"))
+        self._logger._write(self.decorate("start", type="list"))
         self._logger._indent()
         inline = self._default_inline(l) or force_inline(self.full_current_path())
         inlining = inline
@@ -264,15 +264,15 @@ class DataPrinter:
             if not inlining:
                 self._logger._new_line(" ")
             if not inline and not compacting:
-                self._logger.write(self.decorate("item"))
+                self._logger._write(self.decorate("item"))
             self._write_value(item, force_inline=force_inline, compact=compact)
             if not last:
-                self._logger.write(self.decorate("comma"))
+                self._logger._write(self.decorate("comma"))
                 if not compacting:
-                    self._logger.write(" ")
+                    self._logger._write(" ")
             self._logger._current_path.pop()
             inlining = inline
-        self._logger.write(self.decorate("end", type="list"))
+        self._logger._write(self.decorate("end", type="list"))
         self._logger._dindent()
 
     def _write_value(
@@ -290,14 +290,14 @@ class DataPrinter:
         elif isinstance(v, CliArgument):
             self._write_dict(v.to_dict(), force_inline=force_inline, compact=compact)
         else:
-            self._logger.write(self.decorate_value(v))
+            self._logger._write(self.decorate_value(v))
 
 
 class Logger:
 
     def __init__(
         self,
-        name="default",
+        name: str = "default",
         create_config_dict: dict = {},
         stream: TextIO = sys.stdout,
     ):
@@ -342,6 +342,25 @@ class Logger:
     def _dbg(self, *args, enabled=True) -> None:
         if enabled:
             print(*args)  # use default print function for internal debug
+
+    def write(self, *args, **kwargs) -> None:
+        try:
+            def_stream = None
+            self._wkwargs = kwargs.copy()
+            self._indents = [""]
+            self._current_path = ["root"]
+            if "stream" in self._wkwargs.keys():
+                def_stream = self._stream
+                self._stream = self._wkwargs["stream"]
+            self._write(*args, **kwargs)
+        except Exception as e:
+            raise e
+        finally:
+            self._stream.flush()
+            self._indents = [""]
+            self._wkwargs = None
+            if def_stream is not None:
+                self._stream = def_stream
 
     def print(self, *args, **kwargs) -> None:
         if "end" not in kwargs:
@@ -411,21 +430,10 @@ class Logger:
     def _get_wkwargs(self, key, default: any, **kwargs) -> dict:
         return self._wkwargs.get(key, kwargs.get(key, default))
 
-    def write(self, *args, **kwargs) -> None:
+    def _write(self, *args, **kwargs) -> None:
 
         animate = self._safe_get_config("animate")
         flush_rate = self._safe_get_config("flush_rate")
-
-        def_kwargs = self._wkwargs is None
-        def_stream = None
-        if def_kwargs:
-            self._wkwargs = kwargs.copy()
-            self._indents = [""]
-            self._current_path = ["root"]
-
-            if "stream" in self._wkwargs.keys():
-                def_stream = self._stream
-                self._stream = self._wkwargs["stream"]
 
         instant = self._get_wkwargs("instant", False, **kwargs)
         force_inline = self._get_wkwargs("force_inline", lambda k: False, **kwargs)
@@ -455,7 +463,7 @@ class Logger:
                         # Do not let the kraken grow...
                         if loops > security_limit:
                             raise KrakenError(
-                                f"Pattern recursion limit exceeded. You may have an kraken growing in {remaining[0:100]}!"
+                                f"Pattern recursion limit exceeded. You may have an kraken growing in {remaining[0:60]}!"
                             )
                         # Continue to provide recursive patterns
                         continue
@@ -498,13 +506,6 @@ class Logger:
                     if len(remaining) % mod == 0:
                         self._stream.flush()
                         sleep(random.uniform(0.01, 0.03))
-
-        if def_kwargs:
-            self._stream.flush()
-            self._indents = [""]
-            self._wkwargs = None
-            if def_stream is not None:
-                self._stream = def_stream
 
 
 _loggers: dict[str, Logger] = None
