@@ -69,17 +69,22 @@ class UnitTest(Cli.CliModule):
             _unit_test_logger.debug("This is a test debug message.")
         if "config" in modes:
 
-            # Print current config
-            self._config.print()
-
             # Manipulate logger config
             unit_test_config = _unit_test_logger.get_config()
             _unit_test_logger.prompt("Starting config tests...")
 
+            # Print current config
+            _unit_test_logger.prompt("Module config:")
+            self._config.print()
+
             def print_config(message: str):
                 nonlocal unit_test_config
-                _unit_test_logger.success(message, end="")
-                unit_test_config.print(output=_unit_test_logger.prompt)
+                _unit_test_logger.success(message)
+                unit_test_config.print(
+                    output=lambda *args, **kwargs: _unit_test_logger.print(
+                        *args, **kwargs, compact=lambda k: True
+                    )
+                )
 
             dumps_count = 0
 
@@ -94,7 +99,7 @@ class UnitTest(Cli.CliModule):
                 unit_test_config.dump()
 
             # Initial print
-            print_config("Initialized config: ")
+            print_config("Initial config: ")
             dump_config()
 
             # Reload with dict
@@ -172,15 +177,3 @@ class UnitTest(Cli.CliModule):
             Logger.get().print("/;__kraken/;/ ")
 
         return 0
-
-
-# def build_parser(parser: Cli.CliArgumentParser) -> None:
-#     """Legacy function - use UnitTest class instead."""
-#     unit_test = UnitTest()
-#     unit_test.prepare(parser)
-
-
-# def run(parser: Cli.CliArgumentParser) -> int:
-#     """Legacy function - use UnitTest class instead."""
-#     unit_test = UnitTest()
-#     return unit_test.run(parser)

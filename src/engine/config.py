@@ -227,13 +227,15 @@ class Config:
 
     def print(self, output: lambda *args, **kwargs: None = None) -> None:
         if output is None:
-            output = _config_logger.prompt
+            output = _config_logger.print
         output(
             {
-                "nested": self.nested,
-                "config_file": self._config_file,
-                "specific": self._specific_config_dict,
-                "merged": self._merged_config_dict,
+                self._key: {
+                    "nested": self.nested,
+                    "config_file": self._config_file,
+                    "specific": self._specific_config_dict,
+                    "merged": self._merged_config_dict,
+                }
             },
         )
 
