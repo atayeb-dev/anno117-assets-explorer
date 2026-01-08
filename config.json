@@ -1,98 +1,100 @@
 {
-    "logger_default": {
-        "animate": false,
-        "flush_rate": [
-            5,
-            15
-        ],
-        "max_inline": 160,
-        "verbose": true,
-        "styles": {
-            "enable": true,
-            "sep": "cw;di",
-            "obji": "cb;di",
-            "objk": "cg;bo",
-            "arri": "cb;di",
-            "str": "cw;it",
-            "bool": "cc",
-            "num": "cb",
-            "unkn": "cr;di"
+    "loggers": {
+        "default": {
+            "animate": false,
+            "flush_rate": [
+                5,
+                15
+            ],
+            "max_inline": 160,
+            "verbose": true,
+            "styles": {
+                "enable": true,
+                "sep": "cw;di",
+                "obji": "cb;di",
+                "objk": "cg;bo",
+                "arri": "cb;di",
+                "str": "cw;it",
+                "bool": "cc",
+                "num": "cb",
+                "unkn": "cr;di"
+            },
+            "debug": {
+                "enable": false,
+                "print_indent_chars": false
+            }
         },
-        "debug": {
-            "enable": false,
-            "print_indent_chars": false
-        }
-    },
-    "logger_config": {
-        "animate": false,
-        "flush_rate": [
-            5,
-            15
-        ],
-        "max_inline": 160,
-        "verbose": false,
-        "styles": {
-            "enable": true,
-            "sep": "cw;di",
-            "obji": "cb;di",
-            "objk": "cg;bo",
-            "arri": "cb;di",
-            "str": "cw;it",
-            "bool": "cc",
-            "num": "cb",
-            "unkn": "cr;di"
+        "cli": {
+            "animate": true,
+            "flush_rate": [
+                5,
+                15
+            ],
+            "max_inline": 160,
+            "verbose": true,
+            "styles": {
+                "enable": true,
+                "sep": "cw;di",
+                "obji": "cb;di",
+                "objk": "cg;bo",
+                "arri": "cb;di",
+                "str": "cw;it",
+                "bool": "cc",
+                "num": "cb",
+                "unkn": "cr;di"
+            },
+            "debug": {
+                "enable": false,
+                "print_indent_chars": false
+            }
         },
-        "debug": {
-            "enable": false,
-            "print_indent_chars": false
-        }
-    },
-    "logger_cli": {
-        "animate": true,
-        "flush_rate": [
-            5,
-            15
-        ],
-        "max_inline": 160,
-        "verbose": true,
-        "styles": {
-            "enable": true,
-            "sep": "cw;di",
-            "obji": "cb;di",
-            "objk": "cg;bo",
-            "arri": "cb;di",
-            "str": "cw;it",
-            "bool": "cc",
-            "num": "cb",
-            "unkn": "cr;di"
+        "config": {
+            "animate": false,
+            "flush_rate": [
+                5,
+                15
+            ],
+            "max_inline": 160,
+            "verbose": false,
+            "styles": {
+                "enable": true,
+                "sep": "cw;di",
+                "obji": "cb;di",
+                "objk": "cg;bo",
+                "arri": "cb;di",
+                "str": "cw;it",
+                "bool": "cc",
+                "num": "cb",
+                "unkn": "cr;di"
+            },
+            "debug": {
+                "enable": false,
+                "print_indent_chars": false
+            }
         },
-        "debug": {
-            "enable": false,
-            "print_indent_chars": false
-        }
-    },
-    "logger_traceback": {
-        "animate": false,
-        "flush_rate": [
-            5,
-            15
-        ],
-        "max_inline": 160,
-        "verbose": true,
-        "styles": {
-            "enable": true,
-            "sep": "cw;di",
-            "obji": "cb;di",
-            "objk": "cr",
-            "arri": "cb;di",
-            "str": "cm",
-            "bool": "cc",
-            "num": "cb",
-            "unkn": "cr;di"
-        },
-        "debug": {
-            "enable": false,
-            "print_indent_chars": false
+        "traceback": {
+            "animate": false,
+            "flush_rate": [
+                5,
+                15
+            ],
+            "max_inline": 160,
+            "verbose": true,
+            "styles": {
+                "enable": true,
+                "sep": "cw;di",
+                "obji": "cb;di",
+                "objk": "cr",
+                "arri": "cb;di",
+                "str": "cm",
+                "bool": "cc",
+                "num": "cb",
+                "unkn": "cr;di"
+            },
+            "debug": {
+                "enable": false,
+                "print_indent_chars": false
+            }
         }
     }
 }

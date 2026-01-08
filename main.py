@@ -187,7 +187,7 @@ def handle_error(e: BaseException, raise_uncaught: bool = False) -> None:
         logger = Logger.get(
             "special",
             stream=sys.stdout,
-            create_config_dict={
+            config_dict={
                 "animate": True,
                 "flush_rate": [1, 3],
             },
@@ -250,19 +250,14 @@ def main() -> int:
     _current_module = "main"
 
     # Init engine
-    Logger.init()
-    Config.init()
-    Cli.init()
-
-    # Setup traceback logger
-    Logger.get(
-        name="traceback",
-        stream=sys.stderr,
-        create_config_dict={"styles": {"objk": "cr", "str": "cm"}},
-    )
+    Logger.init_default()
+    Config.init_global()
+    Logger.init_loggers()
+    Config.init_logger()
+    Cli.init_logger()
 
     # Merge all logger configs and dump final config to initialize global config file
-    if not (Path.cwd() / Config._default_config_file).exists():
+    if not Config._global_config_file_path.exists():
         for logger in Logger._loggers.values():
             logger.get_config().merge()
         Config.get().dump()

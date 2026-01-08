@@ -1,7 +1,6 @@
 # ============================================================
 # ANSI Logging Utility
 # ============================================================
-import copy
 from io import StringIO
 import random
 import re
@@ -161,7 +160,7 @@ class DataPrinter:
         # Create a temporary logger to measure length bypassing config using default name in the first place
         logger = Logger(
             stream=StringIO(),
-            create_config_dict={"styles": {"enable": False}},
+            config_dict={"styles": {"enable": False}},
         )
         logger._name = "inline-checker"
         # Write the data to the temporary logger forcing inline mode
@@ -298,18 +297,18 @@ class Logger:
     def __init__(
         self,
         name: str = "default",
-        create_config_dict: dict = {},
+        config_dict: dict = {},
         stream: TextIO = sys.stdout,
     ):
 
+        self._name = name
+        self._stream = stream
         self._indents: list[str] = [""]
         self._indents_buffer: TextIO = StringIO()
-        self._wkwargs: dict = None
-        self._current_path: list[str | int] = ["root"]
-        self._name = name
         self._data_printer = DataPrinter(self)
-        self._stream = stream
+        self._current_path: list[str | int] = ["root"]
         self._config = None
+        self._wkwargs: dict = None
 
         from src.utils import deep_merge_dicts
 
@@ -318,14 +317,10 @@ class Logger:
         else:
             self._config_dict = _loggers["default"].get_config().to_dict()
 
-        deep_merge_dicts(self._config_dict, create_config_dict)
+        deep_merge_dicts(self._config_dict, config_dict)
 
-        # Default logger config loading is deffered to manual load_config() call.
-        if name != "default":
-            self.load_config()
-
-    def get_config_name(self) -> str:
-        return f"logger-{self._name}"
+    def get_config_key(self) -> str:
+        return f"loggers.{self._name}"
 
     def load_config(self):
         if self._config is not None:
@@ -333,15 +328,11 @@ class Logger:
         from src.engine.config import get as Config
 
         self._config = Config().create(
-            self.get_config_name(), config_dict=self._config_dict
+            self.get_config_key(), config_dict=self._config_dict
         )
 
     def get_config(self):
         return self._config
-
-    def _dbg(self, *args, enabled=True) -> None:
-        if enabled:
-            print(*args)  # use default print function for internal debug
 
     def write(self, *args, **kwargs) -> None:
         try:
@@ -511,36 +502,69 @@ class Logger:
 _loggers: dict[str, Logger] = None
 
 
-def init():
+def init_default(verbose: bool = False):
     global _loggers
-    _loggers = {"default": Logger(name="default", stream=sys.stdout)}
+    _loggers = {
+        "default": Logger(
+            name="default", config_dict={"verbose": verbose}, stream=sys.stdout
+        )
+    }
+    _loggers["default"].debug("Initialized default logger", verbose_only=True)
+
+
+def init_loggers():
+    global _loggers
+
+    # Load default logger config first, keep the initial verbosity setting
+    default_logger = _loggers["default"]
+    verbose = default_logger._config_dict["verbose"]
+    default_logger.load_config()
+    default_logger._config._config_dict["verbose"] = verbose
+    default_logger.debug("Initializing standard loggers...", verbose_only=True)
+    _loggers = {
+        **_loggers,
+        "cli": Logger(name="cli", config_dict={"animate": True}, stream=sys.stdout),
+        "config": Logger(
+            name="config", config_dict={"verbose": False}, stream=default_logger._stream
+        ),
+        "traceback": Logger(
+            name="traceback",
+            config_dict={"styles": {"objk": "cr", "str": "cm"}},
+            stream=sys.stderr,
+        ),
+    }
+    for logger in list(_loggers.values())[1:]:
+        logger.load_config()
+    default_logger.get_config().reload()
+
+
+def create(
+    name: str,
+    stream: TextIO = sys.stdout,
+    config_dict: dict = None,
+) -> Logger:
+    """Create a new logger by name."""
+    global _loggers
+
+    if name in _loggers:
+        raise RuntimeError(f"Logger '{name}' already exists.")
+    logger = _loggers[name] = Logger(
+        name=name,
+        stream=stream,
+        config_dict=(config_dict if config_dict is not None else {}),
+    )
+    logger.load_config()
+    return logger
 
 
 def get(
     name: str = "default",
-    stream: TextIO = None,
-    create_config_dict: dict = None,
+    config_dict: dict = None,
 ) -> Logger:
     """Get or create a logger by name."""
     global _loggers
-
     if not name in _loggers:
-        if stream is None:
-            raise RuntimeError(f"Provide stream to create logger.")
-        _loggers[name] = Logger(
-            name=name,
-            stream=stream,
-            create_config_dict=(
-                create_config_dict if create_config_dict is not None else {}
-            ),
-        )
-    else:
-        import src.engine.config as Config
-
-        if create_config_dict is not None:
-            _loggers[name].get_config().reload(
-                trust="dict", config_dict=create_config_dict
-            )
-        if stream is not None:
-            _loggers[name]._stream = stream
+        raise RuntimeError(f"Logger '{name}' not found. Use create() to create logger.")
+    if config_dict is not None:
+        _loggers[name].get_config().reload(trust="dict", config_dict=config_dict)
     return _loggers[name]

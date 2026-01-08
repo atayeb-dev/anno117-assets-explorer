@@ -21,14 +21,9 @@ from typing import Callable, Tuple
 _cli_logger: Logger.Logger = None
 
 
-def init():
+def init_logger():
     global _cli_logger
-    # create default animated logger for CLI
-    _cli_logger = Logger.get(
-        "cli",
-        stream=sys.stdout,
-        create_config_dict={"animate": True},
-    )
+    _cli_logger = Logger.get("cli")
 
 
 # ============================================================
@@ -124,6 +119,8 @@ class CliArgument:
         required: bool = False,
         accepted_values: list[str] | None = None,
     ):
+        if long in ["--values"]:
+            raise CliError("You don't want to name an argument '--values'")
         self.long = long
         self.short = short
         self.default = default
@@ -345,7 +342,7 @@ CLI_ARGUMENTS: list[CliArgument] = [
         "--print-args",
         short="-p",
         expect="many",
-        accepted_values=["all", "provided"],
+        accepted_values=["all", "provided", "full"],
         type=str,
         default="provided",
     ),
@@ -364,18 +361,24 @@ class CliArgumentParser:
         self.add_args(*CLI_ARGUMENTS)
 
     def print_args(self):
+
+        def obtain(arg: CliArgument):
+            return (
+                arg._get_value() if not "full" in self._get_arg("--print-args") else arg
+            )
+
         global _cli_logger
         if "all" in self._get_arg("--print-args"):
             _cli_logger.debug(
                 " CLI Arguments: ",
-                self._cli_args,
+                {k: obtain(v) for k, v in self._cli_args.items()},
                 force_inline=lambda k: "accepted_values" in k,
             )
         elif "provided" in self._get_arg("--print-args"):
             _cli_logger.debug(
                 " CLI Arguments: ",
                 {
-                    k: v
+                    k: obtain(v)
                     for k, v in self._cli_args.items()
                     if v.provided and k != "--print-args"
                 },
@@ -385,7 +388,7 @@ class CliArgumentParser:
             _cli_logger.debug(
                 " CLI Arguments: ",
                 {
-                    k: v
+                    k: obtain(v)
                     for k, v in self._cli_args.items()
                     if k[2:] in self._get_arg("--print-args")
                 },

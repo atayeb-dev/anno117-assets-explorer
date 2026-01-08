@@ -6,11 +6,7 @@ import src.engine.logger as Logger
 import src.engine.config as Config
 import src.engine.cli as Cli
 
-_unit_test_logger = Logger.get(
-    "unit-test",
-    stream=sys.stdout,
-    create_config_dict={"animate": True},
-)
+_unit_test_logger: Logger = None
 
 
 class UnitTest(Cli.CliModule):
@@ -18,9 +14,18 @@ class UnitTest(Cli.CliModule):
 
     def prepare(self) -> None:
 
+        global _unit_test_logger
+        try:
+            _unit_test_logger = Logger.create(
+                "unit-test",
+                stream=sys.stdout,
+                config_dict={"animate": True},
+            )
+        except Exception:
+            _unit_test_logger = Logger.get("unit-test")
+
         # Change config path for unit tests
-        self._config._custom_config_path = "tests/config/unit_test_module_config.json"
-        self._config.reload()
+        self._config.specify_file_path("tests/config/unit_test_module_config.json")
 
         """Register unit test arguments."""
         self.add_args(

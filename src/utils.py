@@ -13,6 +13,17 @@ from fnmatch import fnmatch
 from pathlib import Path
 
 
+def ensure_nested_path(d: dict, path: str) -> dict:
+    """Create nested dict structure from dotted path."""
+    keys = path.split(".")
+    current = d
+    for key in keys:
+        if key not in current:
+            current[key] = {}
+        current = current[key]
+    return current
+
+
 def deep_merge_dicts(d1, d2):
     """Recursively merge d2 into d1"""
     for key, value in d2.items():
