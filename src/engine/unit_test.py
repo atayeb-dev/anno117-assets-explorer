@@ -6,7 +6,7 @@ import src.engine.logger as Logger
 import src.engine.config as Config
 import src.engine.cli as Cli
 
-_unit_test_logger: Logger = None
+_unit_test_logger: Logger.Logger = None
 
 
 class UnitTest(Cli.CliModule):
@@ -14,22 +14,30 @@ class UnitTest(Cli.CliModule):
 
     def prepare(self) -> None:
 
-        Config.get("loggers.config").specify_file_path(
-            "tests/config/unit_test_module_config.json"
-        )
-
         global _unit_test_logger
+        # Create dedicated logger for unit tests
         try:
             _unit_test_logger = Logger.create(
                 "unit-test",
                 stream=sys.stdout,
                 config_dict={"animate": True},
             )
+            Logger.get().print(
+                "Created unit test logger: ", _unit_test_logger.get_config()
+            )
         except Exception:
             _unit_test_logger = Logger.get("unit-test")
 
         # Change config path for unit tests
-        self._config.specify_file_path("tests/config/unit_test_module_config.json")
+        self._config.specify_file_path("tests/config/unit-test-module-config.json")
+
+        # Clear previous dumps
+        import shutil
+
+        path = Path.cwd() / "tests" / "dump"
+        if path.exists():
+            shutil.rmtree(path)
+        path.mkdir(parents=True, exist_ok=True)
 
         """Register unit test arguments."""
         self.add_args(
@@ -50,29 +58,46 @@ class UnitTest(Cli.CliModule):
         )
 
     def run(self) -> int:
-        global _unit_test_logger
         """Execute unit test module."""
         modes = self.get_arg("--modes")
         Logger.get().print("Running UnitTest module with modes: ", modes)
         if "prompt" in modes:
+            # Simple prompt tests
             _unit_test_logger.error("This is a test error message.")
             _unit_test_logger.success("This is a test success message.")
             _unit_test_logger.prompt("This is a test prompt message.")
             _unit_test_logger.debug("This is a test debug message.")
         if "config" in modes:
-            logger_config = _unit_test_logger.get_config()
-            logger_config.specify_file_path("tests/unit-test-logger.json")
+
+            # Print current config
+            self._config.print()
+
+            # Manipulate logger config
+            unit_test_config = _unit_test_logger.get_config()
             _unit_test_logger.prompt("Starting config tests...")
 
             def print_config(message: str):
-                nonlocal logger_config
-                _unit_test_logger.success(
-                    message,
-                    logger_config,
-                    force_inline=lambda k: "styles" in k,
-                )
+                nonlocal unit_test_config
+                _unit_test_logger.success(message, end="")
+                unit_test_config.print(output=_unit_test_logger.prompt)
 
+            dumps_count = 0
+
+            def dump_config():
+                nonlocal unit_test_config
+                nonlocal dumps_count
+                dumps_count += 1
+                # Dump reload result
+                unit_test_config.specify_file_path(
+                    f"tests/dump/unit-test-logger.dump.{dumps_count}.json", reload=False
+                )
+                unit_test_config.dump()
+
+            # Initial print
             print_config("Initialized config: ")
+            dump_config()
+
+            # Reload with dict
             config_dict = {
                 "flush_rate": [2, 3],
                 "styles": {
@@ -81,19 +106,24 @@ class UnitTest(Cli.CliModule):
                     "sep": "cw",
                 },
             }
-            logger_config.dump()
             _unit_test_logger.prompt("Reloading config trusting dict: ", config_dict)
-            logger_config.reload(
-                config_dict=config_dict,
-                trust="dict",
-            )
+            unit_test_config.reload(config_dict=config_dict, trust="dict")
             print_config("Reloaded config trusting dict: ")
-            logger_config.specify_file_path("tests/unknown.json")
-            print_config("Reloaded config trusting file: ")
-            logger_config.specify_file_path("tests/unit-test-logger.json")
-            print_config("Reloaded config trusting file: ")
-            logger_config.delete_file()
-            Logger.get("config").get_config().reload()
+            dump_config()
+
+            # Reload with unknown file
+            unit_test_config.specify_file_path("tests/unknown.json")
+            print_config("Reloaded config trusting unknown file: ")
+            dump_config()
+
+            # Reload with module file
+            unit_test_config.reload_for_module(self)
+            print_config("Reloaded config from module: ")
+            dump_config()
+
+            # Reload with module file
+            unit_test_config.reload_for_module(self)
+
             _unit_test_logger.success("Done config tests.")
 
         if "data-print" in modes:
@@ -113,6 +143,7 @@ class UnitTest(Cli.CliModule):
 
             def read_print_test_data(read_path: any):
                 try:
+                    _unit_test_logger.prompt(f"Loading test data from {read_path}")
                     with open(read_path, "r", encoding="utf-8") as f:
                         test_data = json.load(f)
                     _unit_test_logger.success(f"Loaded test data from {read_path}")

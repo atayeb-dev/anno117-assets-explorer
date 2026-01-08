@@ -1,12 +1,13 @@
 # ============================================================
 # ANSI Logging Utility
 # ============================================================
+import copy
 from io import StringIO
 import random
 import re
 import sys
 from time import sleep
-from typing import TextIO, Tuple
+from typing import Literal, TextIO, Tuple
 from glom import glom
 import src.engine.logger as Logger
 
@@ -157,12 +158,11 @@ class DataPrinter:
         # Check we are checking from the inline-checker logger itself
         if self._logger._name == "inline-checker":
             return True
-        # Create a temporary logger to measure length bypassing config using default name in the first place
+        # Create a temporary logger to measure length.
         logger = Logger(
+            "inline-checker",
             stream=StringIO(),
-            config_dict={"styles": {"enable": False}},
         )
-        logger._name = "inline-checker"
         # Write the data to the temporary logger forcing inline mode
         logger.write(dl, ansi=False, force_inline=lambda k: True)
         # Check we have the remaining space to inline
@@ -296,11 +296,10 @@ class Logger:
 
     def __init__(
         self,
-        name: str = "default",
-        config_dict: dict = {},
+        name: str,
         stream: TextIO = sys.stdout,
     ):
-
+        global _loggers
         self._name = name
         self._stream = stream
         self._indents: list[str] = [""]
@@ -310,26 +309,50 @@ class Logger:
         self._config = None
         self._wkwargs: dict = None
 
-        from src.utils import deep_merge_dicts
-
-        if name == "default":
-            self._config_dict = _default_config
-        else:
-            self._config_dict = _loggers["default"].get_config().to_dict()
-
-        deep_merge_dicts(self._config_dict, config_dict)
-
     def get_config_key(self) -> str:
         return f"loggers.{self._name}"
 
-    def load_config(self):
+    def load_config(
+        self,
+        trust: Literal["file", "dict"] = "file",
+        config_dict: dict = {},
+    ):
         if self._config is not None:
             raise RuntimeError("Logger config already loaded.")
         from src.engine.config import get as Config
 
         self._config = Config().create(
-            self.get_config_key(), config_dict=self._config_dict
+            self.get_config_key(), trust=trust, config_dict=config_dict
         )
+
+    def reload_config(
+        self,
+        trust: Literal["file", "dict"] = "file",
+        config_dict: dict = {},
+    ):
+        if self._config is None:
+            raise RuntimeError("Logger config not loaded yet.")
+        self._config.reload(trust=trust, config_dict=config_dict)
+
+    def _safe_get_config(self, key: str):
+
+        # Inline checker special case:
+        if self._name == "inline-checker":
+            return glom(
+                {"styles": {"enable": False}},
+                key,
+                default=glom(_default_config, key),
+            )
+
+        # Default fallback:
+        elif self._name == "default":
+            default = glom(_default_config, key)
+        else:
+            default = _loggers["default"]._safe_get_config(key)
+
+        if self._config is None:
+            return default
+        return self._config.get(key, default=default)
 
     def get_config(self):
         return self._config
@@ -386,10 +409,6 @@ class Logger:
             lines -= 1
             self._stream.write("\x1b[F\x1b[K")
         self._stream.flush()
-
-    _safe_get_config = lambda self, key: (
-        glom(self._config_dict, key) if self._config is None else self._config.get(key)
-    )
 
     def _indent(self) -> None:
         indents_char = self._indents_buffer.getvalue()
@@ -504,44 +523,37 @@ _loggers: dict[str, Logger] = None
 
 def init_default(verbose: bool = False):
     global _loggers
-    _loggers = {
-        "default": Logger(
-            name="default", config_dict={"verbose": verbose}, stream=sys.stdout
-        )
-    }
+    global _default_config
+    _default_config["verbose"] = verbose
+    _loggers = {"default": Logger(name="default", stream=sys.stdout)}
     _loggers["default"].debug("Initialized default logger", verbose_only=True)
 
 
 def init_loggers():
     global _loggers
 
-    # Load default logger config first, keep the initial verbosity setting
+    # Load default logger config first, keep the default config settings
     default_logger = _loggers["default"]
-    verbose = default_logger._config_dict["verbose"]
-    default_logger.load_config()
-    default_logger._config._config_dict["verbose"] = verbose
+    default_logger.load_config(trust="dict", config_dict=_default_config)
+
+    # Build standard loggers
     default_logger.debug("Initializing standard loggers...", verbose_only=True)
-    _loggers = {
-        **_loggers,
-        "cli": Logger(name="cli", config_dict={"animate": True}, stream=sys.stdout),
-        "config": Logger(
-            name="config", config_dict={"verbose": False}, stream=default_logger._stream
-        ),
-        "traceback": Logger(
-            name="traceback",
-            config_dict={"styles": {"objk": "cr", "str": "cm"}},
-            stream=sys.stderr,
-        ),
+    logger_configs = {
+        "cli": {"animate": True},
+        "config": {"verbose": False},
+        "traceback": {"styles": {"objk": "cr", "str": "cm"}},
     }
-    for logger in list(_loggers.values())[1:]:
-        logger.load_config()
-    default_logger.get_config().reload()
+    for name, config_dict in logger_configs.items():
+        create(name=name, stream=sys.stdout, config_dict=config_dict)
+
+    # Restore default logger to configuration from file
+    default_logger.reload_config()
 
 
 def create(
     name: str,
     stream: TextIO = sys.stdout,
-    config_dict: dict = None,
+    config_dict: dict = {},
 ) -> Logger:
     """Create a new logger by name."""
     global _loggers
@@ -551,9 +563,8 @@ def create(
     logger = _loggers[name] = Logger(
         name=name,
         stream=stream,
-        config_dict=(config_dict if config_dict is not None else {}),
     )
-    logger.load_config()
+    logger.load_config(config_dict=config_dict)
     return logger
 
 

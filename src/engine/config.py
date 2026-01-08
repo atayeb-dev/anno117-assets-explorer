@@ -1,3 +1,4 @@
+import copy
 import json
 from pathlib import Path
 import re
@@ -6,8 +7,7 @@ from glom import glom
 
 from src.engine.cli import CliModule
 import src.engine.logger as Logger
-from src.utils import deep_merge_dicts, ensure_nested_path
-import copy
+import src.utils as Utils
 
 _global_config: GlobalConfig = None
 _default_logger: Logger.Logger = None
@@ -42,53 +42,23 @@ def _read_config_from_file(read_path: Path) -> dict:
     return {}
 
 
-def _write_config_to_file(write_path: Path, config: dict):
+def _dump_config_to_file(write_path: Path, config: dict):
     global _config_logger
+    write_config = Utils.deep_merge_dicts(_read_config_from_file(write_path), config)
     try:
         """Dump the current configuration to a file."""
         write_path.parent.mkdir(parents=True, exist_ok=True)
         with open(write_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=4)
+            json.dump(write_config, f, indent=4)
     except Exception:
         _config_logger.error(f"Failed to write config file: {write_path.absolute()}")
 
 
-def _update_config(_config: Config, trust="File", config_dict: dict = {}) -> dict:
-    global _global_config
-    config_file = _read_config_from_file(_config._config_file)
-    _global_config_dict = _glom_get(
-        copy.deepcopy(_global_config._config_dict), _config._key
-    )
-
-    merges = [
-        copy.deepcopy(
-            _config._config_dict
-            if _config._config_dict
-            else _config._initial_config_dict
-        ),
-    ]
-    if trust == "file":
-        merges.append(copy.deepcopy(config_dict))
-        merges.append(_global_config_dict)
-        merges.append(config_file)
-    elif trust == "dict":
-        merges.append(_global_config_dict)
-        merges.append(config_file)
-        merges.append(copy.deepcopy(config_dict))
-    else:
-        raise RuntimeError(f"Unknown trust source: {trust}")
-    while len(merges) > 1:
-        deep_merge_dicts(merges[0], merges[1])
-        merges.pop(1)
-    return merges[0]
-
-
-def _glom_get(d: dict, path: str, default={}):
-    return glom(d, path, default=default)
-
-
 class ConfigError(Exception):
     pass
+
+
+from typing import Literal
 
 
 class Config:
@@ -96,27 +66,124 @@ class Config:
     def __init__(
         self,
         key: str,
-        trust: str = "file",
+        trust: Literal["file", "dict"] = "file",
         config_dict: dict = {},
     ):
         global _config_logger
 
         self._key = key
-        self._initial_config_dict = copy.deepcopy(config_dict)
-        self._module_config_dict = {}
+        _config_logger.debug(f"Creating '{self._key}'.", verbose_only=True)
+
+        self._merged_config_dict = {}
+        self._specific_config_dict = {}
 
         self.nested = "." in key
         self.specify_file_path(reload=False)
-        self._config_dict = {}
         self.reload(trust=trust, config_dict=config_dict)
         _config_logger.success(f"Config '{self._key}' initialized.", verbose_only=True)
+
+    def _update(
+        self,
+        trust: Literal["file", "dict"] = "file",
+        config_dict: dict = {},
+    ) -> dict:
+        global _global_config
+
+        # Copy the update config dict and current specific config dict
+        update_config_dict = copy.deepcopy(config_dict)
+        specific_config_dict = (
+            # When trusting file, start fresh
+            {}
+            if trust == "file"
+            else copy.deepcopy(self._specific_config_dict)
+        )
+
+        # Load both global and specific config files
+        global_config_file_dict = _read_config_from_file(_global_config_file_path)
+        specific_config_file_dict = _read_config_from_file(self._config_file)
+
+        # Create the nested structure for merging
+        update_config_dict = Utils.nest_dict(update_config_dict, self._key)
+        specific_config_dict = Utils.nest_dict(specific_config_dict, self._key)
+
+        # If nested, keep only the relevant sub-dict from specific config file
+        if self.nested:
+            specific_config_file_dict = Utils.nest_dict(
+                Utils.ensure_get_dict(specific_config_file_dict, self._key), self._key
+            )
+        else:
+            # Create the nested structure for merging
+            specific_config_file_dict = Utils.nest_dict(
+                specific_config_file_dict, self._key
+            )
+        # Extract only the relevant sub-dict from global config file keeping nesting
+        global_config_file_dict = Utils.nest_dict(
+            Utils.ensure_get_dict(global_config_file_dict, self._key), self._key
+        )
+
+        # Get a merged version of global and specific config files
+        merged_config_file_dict = Utils.deep_merge_dicts(
+            copy.deepcopy(global_config_file_dict),
+            copy.deepcopy(specific_config_file_dict),
+        )
+
+        # Merge according to trust order
+        if trust == "file":
+            self._specific_config_dict = Utils.deep_merge_dicts(
+                copy.deepcopy(update_config_dict),
+                copy.deepcopy(specific_config_dict),
+                copy.deepcopy(specific_config_file_dict),
+            )
+            self._merged_config_dict = Utils.deep_merge_dicts(
+                copy.deepcopy(self._specific_config_dict),
+                copy.deepcopy(merged_config_file_dict),
+            )
+        elif trust == "dict":
+            self._specific_config_dict = Utils.deep_merge_dicts(
+                copy.deepcopy(specific_config_file_dict),
+                copy.deepcopy(specific_config_dict),
+                copy.deepcopy(update_config_dict),
+            )
+            self._merged_config_dict = Utils.deep_merge_dicts(
+                copy.deepcopy(merged_config_file_dict),
+                copy.deepcopy(self._specific_config_dict),
+            )
+
+        # Always d-nest to keep only actual config dicts
+        self._specific_config_dict = Utils.ensure_get_dict(
+            self._specific_config_dict, self._key, default=None
+        )
+        self._merged_config_dict = Utils.ensure_get_dict(
+            self._merged_config_dict, self._key, default=None
+        )
+
+        # Sanity check
+        if self._specific_config_dict is None or self._merged_config_dict is None:
+            raise ConfigError(f"Failed to extract config dict for key '{self._key}'.")
+
+        _config_logger.debug(
+            f">>> UPDATED {self._key} CONFIG\n",
+            {
+                "trust": trust,
+                "config_file": self._config_file,
+                "update_config_dict": update_config_dict,
+                "specific_config_dict": specific_config_dict,
+                "specific_config_file_dict": specific_config_file_dict,
+                "global_config_file_dict": global_config_file_dict,
+                "merged_config_file_dict": merged_config_file_dict,
+                "self.specific_config": self._specific_config_dict,
+                "self.merged_config": self._merged_config_dict,
+            },
+            verbose_only=True,
+        )
+        _config_logger.debug(f"<<< UPDATED {self._key} CONFIG", verbose_only=True)
 
     def specify_file_path(self, new_path: str | Path = "", reload: bool = True) -> None:
         if new_path == "":
             self._config_file = (
                 None
                 if self.nested
-                else _config_file_path(re.sub(r"[.]", "-", self._key.strip()))
+                else _config_file_path(re.sub(r"[._]", "-", self._key.strip()))
             )
         else:
             self._config_file = Path.cwd() / new_path
@@ -134,10 +201,10 @@ class Config:
             )
         else:
             self.specify_file_path(
-                _global_config.get(module.get_config_name())._config_file
+                _global_config.get(module.get_config_key())._config_file
             )
             _config_logger.debug(
-                f"Config '{self._key}' reloaded for module '{module.get_config_name()}'.",
+                f"Module config for '{self._key}' loaded from '{self._config_file}'.",
                 verbose_only=True,
             )
 
@@ -146,37 +213,45 @@ class Config:
         trust: str = "file",
         config_dict: dict = {},
     ):
-        self._config_dict = _update_config(self, trust=trust, config_dict=config_dict)
+        self._update(trust=trust, config_dict=config_dict)
 
     def get(self, key: str = "", default=None) -> any | None:
         if key == "":
-            return copy.deepcopy(self._config_dict)
-        return _glom_get(copy.deepcopy(self._config_dict), key, default=default)
+            return copy.deepcopy(self._merged_config_dict)
+        return copy.deepcopy(
+            Utils.ensure_get_dict(self._merged_config_dict, key, default=default)
+        )
 
     def get_path(self, key: str) -> Path:
         return Path(Path.cwd() / self.get(f"paths.{key}", ""))
 
-    def validate(self, key: str, dir=False) -> Path:
-        path = self.get_path(key, default=None)
-        if path is None:
-            raise FileNotFoundError("Select a file")
-        if dir:
-            if not path.exists():
-                path.mkdir(parents=True, exist_ok=True)
-        else:
-            if not path.exists() or not path.is_file():
-                raise FileNotFoundError("Select a file")
-        return path
+    def print(self, output: lambda *args, **kwargs: None = None) -> None:
+        if output is None:
+            output = _config_logger.prompt
+        output(
+            {
+                "nested": self.nested,
+                "config_file": self._config_file,
+                "specific": self._specific_config_dict,
+                "merged": self._merged_config_dict,
+            },
+        )
 
     def dump(self) -> None:
         """Dump the current configuration to a file."""
-        global _config_logger
-        _write_config_to_file(self._config_file, self._config_dict)
+        if self.nested:
+            _dump_config_to_file(
+                self._config_file,
+                Utils.nest_dict(self._specific_config_dict, self._key),
+            )
+        else:
+            _dump_config_to_file(self._config_file, self._specific_config_dict)
         _config_logger.success(f"Config {self._key} dumped to '{self._config_file}'.")
 
     def delete_file(self) -> None:
         """Delete the configuration file."""
-        global _config_logger
+        if self.nested:
+            raise ConfigError("Cannot delete config file from nested config.")
         config_path = self._config_file
         if config_path.is_file():
             config_path.unlink()
@@ -190,16 +265,21 @@ class Config:
         """Merge global config into this config."""
         global _config_logger
         global _global_config
-        if _glom_get(_global_config._config_dict, self._key, default=None) is None:
-            ensure_nested_path(_global_config._config_dict, self._key)
-        deep_merge_dicts(
-            _glom_get(_global_config._config_dict, self._key, default=None),
-            self._config_dict,
+        global_config_target = Utils.ensure_get_dict(
+            _global_config._config_dict, self._key, default=None
+        )
+        if global_config_target is None:
+            global_config_target = Utils.ensure_nested_path(
+                _global_config._config_dict, self._key
+            )
+        Utils.deep_merge_dicts(
+            global_config_target,
+            copy.deepcopy(self._specific_config_dict),
         )
         _config_logger.success(f"Config {self._key} merged in global.")
 
     def to_dict(self) -> dict:
-        return copy.deepcopy(self._config_dict)
+        return copy.deepcopy(self._specific_config_dict)
 
 
 class GlobalConfig:
@@ -208,23 +288,6 @@ class GlobalConfig:
 
     def __init__(self):
         self._config_dict = _read_config_from_file(_global_config_file_path)
-        # try:
-        #     self._config_dict = _silent_read_config_from_file(_global_config_file_path)
-        #     _config_logger.success(
-        #         f"Loaded global config from {_global_config_file_path}",
-        #         verbose_only=True,
-        #     )
-        # except FileNotFoundError:
-        #     _config_logger.error(
-        #         f"No global config file found at {_global_config_file_path}",
-        #         verbose_only=True,
-        #     )
-        # except Exception as e:
-        #     _config_logger.error(
-        #         f"Failed to initialize global config: {e}", verbose_only=True
-        #     )
-        # if self._config_dict is None:
-        #     self._config_dict = {}
 
     def create(
         self,
@@ -251,13 +314,13 @@ class GlobalConfig:
     def dump(self, key: str = "") -> None:
         global _config_logger
         if not key:
-            _write_config_to_file(_global_config_file_path, self._config_dict)
+            _dump_config_to_file(_global_config_file_path, self._config_dict)
             _config_logger.success(
                 f"Global config dumped to '{_global_config_file_path}'."
             )
             return
         if key not in self._cached_configs:
-            _config_logger.error(f"Config '{key}' not found in global.")
+            _config_logger.error(f"Can't dump unknown config '{key}'.")
         else:
             self._cached_configs[key].dump()
 

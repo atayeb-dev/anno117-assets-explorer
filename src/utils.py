@@ -11,9 +11,11 @@ Provides reusable functions for file handling, XML processing, and naming conven
 import xml.etree.ElementTree as ET
 from fnmatch import fnmatch
 from pathlib import Path
+from glom import glom
+import copy
 
 
-def ensure_nested_path(d: dict, path: str) -> dict:
+def ensure_nested_path(d: dict, path: str, push: dict = {}) -> dict:
     """Create nested dict structure from dotted path."""
     keys = path.split(".")
     current = d
@@ -21,18 +23,38 @@ def ensure_nested_path(d: dict, path: str) -> dict:
         if key not in current:
             current[key] = {}
         current = current[key]
+    current.update(push)
     return current
 
 
-def deep_merge_dicts(d1, d2):
-    """Recursively merge d2 into d1"""
+def nest_dict(dict: dict, path: str) -> dict:
+    nested_config_dict = {}
+    ensure_nested_path(nested_config_dict, path, push=dict)
+    return nested_config_dict
+
+
+def ensure_get_dict(d: dict, path: str, default: dict | None = {}) -> dict | None:
+    return glom(d, path, default=default)
+
+
+def deep_merge_dicts(*dicts: dict) -> dict:
+    dicts_list = list(copy.deepcopy(d) for d in dicts)
+    while len(dicts_list) > 1:
+        _deep_merge_dicts(dicts_list[-2], dicts_list[-1])
+        dicts_list.pop()
+    return dicts_list[0]
+
+
+def _deep_merge_dicts(d1: dict, d2: dict) -> dict:
+    """Recursively merge d2 into d1 with deep copy"""
+
     for key, value in d2.items():
         if not key in d1.keys():
-            d1[key] = value
+            d1[key] = copy.deepcopy(value)
         elif isinstance(value, dict) and isinstance(d1.get(key), dict):
-            deep_merge_dicts(d1[key], value)
+            _deep_merge_dicts(d1[key], value)
         else:
-            d1[key] = value
+            d1[key] = copy.deepcopy(value)
     return d1
 
 

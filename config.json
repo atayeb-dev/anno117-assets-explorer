@@ -1,54 +1,13 @@
 {
+    "unit_test_module": {
+        "--print-args": [
+            "modes",
+            "test-data",
+            "print-args"
+        ]
+    },
     "loggers": {
         "default": {
-            "animate": false,
-            "flush_rate": [
-                5,
-                15
-            ],
-            "max_inline": 160,
-            "verbose": true,
-            "styles": {
-                "enable": true,
-                "sep": "cw;di",
-                "obji": "cb;di",
-                "objk": "cg;bo",
-                "arri": "cb;di",
-                "str": "cw;it",
-                "bool": "cc",
-                "num": "cb",
-                "unkn": "cr;di"
-            },
-            "debug": {
-                "enable": false,
-                "print_indent_chars": false
-            }
-        },
-        "cli": {
-            "animate": true,
-            "flush_rate": [
-                5,
-                15
-            ],
-            "max_inline": 160,
-            "verbose": true,
-            "styles": {
-                "enable": true,
-                "sep": "cw;di",
-                "obji": "cb;di",
-                "objk": "cg;bo",
-                "arri": "cb;di",
-                "str": "cw;it",
-                "bool": "cc",
-                "num": "cb",
-                "unkn": "cr;di"
-            },
-            "debug": {
-                "enable": false,
-                "print_indent_chars": false
-            }
-        },
-        "config": {
             "animate": false,
             "flush_rate": [
                 5,
@@ -72,28 +31,18 @@
                 "print_indent_chars": false
             }
         },
+        "cli": {
+            "animate": true,
+            "gui_file_dialogs": false,
+            "verbose": false
+        },
+        "config": {
+            "verbose": false
+        },
         "traceback": {
-            "animate": false,
-            "flush_rate": [
-                5,
-                15
-            ],
-            "max_inline": 160,
-            "verbose": true,
             "styles": {
-                "enable": true,
-                "sep": "cw;di",
-                "obji": "cb;di",
                 "objk": "cr",
-                "arri": "cb;di",
-                "str": "cm",
-                "bool": "cc",
-                "num": "cb",
-                "unkn": "cr;di"
-            },
-            "debug": {
-                "enable": false,
-                "print_indent_chars": false
+                "str": "cm"
             }
         }
     }

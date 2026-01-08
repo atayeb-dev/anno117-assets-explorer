@@ -257,10 +257,10 @@ def main() -> int:
     Cli.init_logger()
 
     # Merge all logger configs and dump final config to initialize global config file
-    if not Config._global_config_file_path.exists():
-        for logger in Logger._loggers.values():
-            logger.get_config().merge()
-        Config.get().dump()
+    # if not Config._global_config_file_path.exists():
+    for logger in Logger._loggers.values():
+        logger.get_config().merge()
+    Config.get().dump()
 
     try:
         cli = False

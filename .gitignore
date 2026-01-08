@@ -3,6 +3,7 @@
 /gen/
 /.cache/
 /config/
+/tests/dump/
 
 # RdaConsole executable
 rda_console/RdaConsole.exe
