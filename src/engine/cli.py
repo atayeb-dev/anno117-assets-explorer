@@ -514,13 +514,21 @@ class CliModule:
         self._module: ModuleType = module
         self._simple_module_name: str = self._module.__name__.split(".")[-1]
         self._module_name: str = self._module.__name__
-        config_name: str = self._simple_module_name + "-module"
+        self._config_name: str = self._simple_module_name + "-module"
         try:
-            self._config = Config.get(config_name)
+            self._config = Config.get(self._config_name)
         except Config.ConfigError:
-            self._config = Config.get().create(config_name)
+            self._config = Config.get().create(self._config_name)
         self._parser = CliArgumentParser(self)
         self.prepare()
+
+    def get_config_name(self) -> str:
+        """Get the name of the config associated with this module."""
+        return self._config_name
+
+    def get_config(self) -> Config.Config:
+        """Get the Config instance associated with this module."""
+        return self._config
 
     def help(self) -> str | None:
         """Return help text for the module."""
@@ -558,13 +566,25 @@ class CliModule:
         """
         raise NotImplementedError("Subclasses must implement run() method")
 
+    def finalize(self) -> None:
+        """
+        Hook for subclasses to implement any finalization logic after run.
+        Override this method to implement custom behavior.
+        """
+        pass
+
     def execute(self, module_args: list[str] = []) -> int:
         """Execute the module: parse arguments and run."""
         try:
             for a in self._parser._cli_args.values():
                 a.reset()
             self._config.reload()
+            Config.get().reload_for_module(self)
             self._parser.parse_args(module_args)
+            if self.get_arg("--print-args"):
+                self._parser.print_args()
+            result = self.run()
+            return result if isinstance(result, int) else 0
         except CliHelpRequested:
             if help_text := self.help():
                 _cli_logger.prompt("Help requested!")
@@ -572,7 +592,6 @@ class CliModule:
             else:
                 _cli_logger.critical("Nothing can help you now...")
             return 0
-        if self.get_arg("--print-args"):
-            self._parser.print_args()
-        result = self.run()
-        return result if isinstance(result, int) else 0
+        finally:
+            Config.get().reload_for_module()
+            self.finalize()

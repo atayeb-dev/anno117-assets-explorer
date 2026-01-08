@@ -14,6 +14,10 @@ class UnitTest(Cli.CliModule):
 
     def prepare(self) -> None:
 
+        Config.get("loggers.config").specify_file_path(
+            "tests/config/unit_test_module_config.json"
+        )
+
         global _unit_test_logger
         try:
             _unit_test_logger = Logger.create(
@@ -46,6 +50,7 @@ class UnitTest(Cli.CliModule):
         )
 
     def run(self) -> int:
+        global _unit_test_logger
         """Execute unit test module."""
         modes = self.get_arg("--modes")
         Logger.get().print("Running UnitTest module with modes: ", modes)
@@ -55,11 +60,8 @@ class UnitTest(Cli.CliModule):
             _unit_test_logger.prompt("This is a test prompt message.")
             _unit_test_logger.debug("This is a test debug message.")
         if "config" in modes:
-            Logger.get("config").get_config().reload(
-                config_dict={"verbose": True}, trust="dict"
-            )
             logger_config = _unit_test_logger.get_config()
-            logger_config._custom_config_path = "tests/unit-test-logger.json"
+            logger_config.specify_file_path("tests/unit-test-logger.json")
             _unit_test_logger.prompt("Starting config tests...")
 
             def print_config(message: str):
@@ -86,11 +88,9 @@ class UnitTest(Cli.CliModule):
                 trust="dict",
             )
             print_config("Reloaded config trusting dict: ")
-            logger_config._custom_config_path = "tests/unknown.json"
-            logger_config.reload()
+            logger_config.specify_file_path("tests/unknown.json")
             print_config("Reloaded config trusting file: ")
-            logger_config._custom_config_path = "tests/unit-test-logger.json"
-            logger_config.reload()
+            logger_config.specify_file_path("tests/unit-test-logger.json")
             print_config("Reloaded config trusting file: ")
             logger_config.delete_file()
             Logger.get("config").get_config().reload()

@@ -4,6 +4,7 @@ import re
 
 from glom import glom
 
+from src.engine.cli import CliModule
 import src.engine.logger as Logger
 from src.utils import deep_merge_dicts, ensure_nested_path
 import copy
@@ -18,40 +19,38 @@ _config_file_path = (
 )
 
 
-def _silent_read_config_from_file(path: str | Path) -> dict:
-
-    read_path = Path.cwd() / path
-    with open(read_path, "r", encoding="utf-8") as f:
-        config = json.load(f)
-    return config
-
-
-def _read_config_from_file(path: str | Path) -> dict:
+def _read_config_from_file(read_path: Path) -> dict:
     global _config_logger
     try:
-        config = _silent_read_config_from_file(path)
-        _config_logger.success(
-            f"Loaded config from {path.absolute()}", verbose_only=True
-        )
-        return config
+        if not read_path or not read_path.is_file():
+            _config_logger.error(
+                f"Path: {read_path} is not a file.",
+                verbose_only=True,
+            )
+        else:
+            with open(read_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            _config_logger.success(
+                f"Loaded config from {read_path.absolute()}", verbose_only=True
+            )
+            return config
     except Exception as e:
         _config_logger.error(
-            f"Failed to load config file: {path.absolute()}", verbose_only=True
+            f"Failed to load config file: {read_path.absolute()}: {e}",
+            verbose_only=True,
         )
     return {}
 
 
-def _write_config_to_file(path: str | Path, config: dict) -> Path:
+def _write_config_to_file(write_path: Path, config: dict):
     global _config_logger
     try:
-        write_path = Path(path)
         """Dump the current configuration to a file."""
         write_path.parent.mkdir(parents=True, exist_ok=True)
         with open(write_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4)
     except Exception:
         _config_logger.error(f"Failed to write config file: {write_path.absolute()}")
-    return {}
 
 
 def _update_config(_config: Config, trust="File", config_dict: dict = {}) -> dict:
@@ -104,24 +103,43 @@ class Config:
 
         self._key = key
         self._initial_config_dict = copy.deepcopy(config_dict)
+        self._module_config_dict = {}
+
         self.nested = "." in key
-        self._config_file = (
-            None if self.nested else _config_file_path(re.sub(r"[.]", "-", key.strip()))
-        )
+        self.specify_file_path(reload=False)
         self._config_dict = {}
         self.reload(trust=trust, config_dict=config_dict)
         _config_logger.success(f"Config '{self._key}' initialized.", verbose_only=True)
 
-    def specify_file_path(self, new_path: str | Path, reload: bool = True) -> None:
-        """Change the configuration file path."""
-        self._config_file = Path.cwd() / new_path
+    def specify_file_path(self, new_path: str | Path = "", reload: bool = True) -> None:
+        if new_path == "":
+            self._config_file = (
+                None
+                if self.nested
+                else _config_file_path(re.sub(r"[.]", "-", self._key.strip()))
+            )
+        else:
+            self._config_file = Path.cwd() / new_path
         if reload:
             self.reload()
 
-    def reload_for_module(self, module_name: str):
-        self.specify_file_path(
-            Path.cwd() / "config" / f"{module_name}-config.json", reload=True
-        )
+    def reload_for_module(self, module: CliModule | None = None):
+        if not self.nested:
+            raise ConfigError("Cannot reload config for module when key is not nested.")
+        unload = module is None
+        if unload:
+            self.specify_file_path()
+            _config_logger.debug(
+                f"Module config for '{self._key}' unloaded.", verbose_only=True
+            )
+        else:
+            self.specify_file_path(
+                _global_config.get(module.get_config_name())._config_file
+            )
+            _config_logger.debug(
+                f"Config '{self._key}' reloaded for module '{module.get_config_name()}'.",
+                verbose_only=True,
+            )
 
     def reload(
         self,
@@ -189,23 +207,24 @@ class GlobalConfig:
     _cached_configs: dict[str, Config] = {}
 
     def __init__(self):
-        try:
-            self._config_dict = _silent_read_config_from_file(_global_config_file_path)
-            _config_logger.success(
-                f"Loaded global config from {_global_config_file_path}",
-                verbose_only=True,
-            )
-        except FileNotFoundError:
-            _config_logger.error(
-                f"No global config file found at {_global_config_file_path}",
-                verbose_only=True,
-            )
-        except Exception as e:
-            _config_logger.error(
-                f"Failed to initialize global config: {e}", verbose_only=True
-            )
-        if self._config_dict is None:
-            self._config_dict = {}
+        self._config_dict = _read_config_from_file(_global_config_file_path)
+        # try:
+        #     self._config_dict = _silent_read_config_from_file(_global_config_file_path)
+        #     _config_logger.success(
+        #         f"Loaded global config from {_global_config_file_path}",
+        #         verbose_only=True,
+        #     )
+        # except FileNotFoundError:
+        #     _config_logger.error(
+        #         f"No global config file found at {_global_config_file_path}",
+        #         verbose_only=True,
+        #     )
+        # except Exception as e:
+        #     _config_logger.error(
+        #         f"Failed to initialize global config: {e}", verbose_only=True
+        #     )
+        # if self._config_dict is None:
+        #     self._config_dict = {}
 
     def create(
         self,
@@ -223,6 +242,11 @@ class GlobalConfig:
         if key not in self._cached_configs:
             raise ConfigError(f"Config '{key}' not found in global.")
         return self._cached_configs[key]
+
+    def reload_for_module(self, module: CliModule | None = None) -> None:
+        for cfg in self._cached_configs.values():
+            if cfg.nested:
+                cfg.reload_for_module(module)
 
     def dump(self, key: str = "") -> None:
         global _config_logger
