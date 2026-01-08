@@ -122,12 +122,14 @@ class ModuleDispatcher:
 
         def check_path(source: str) -> str:
             return (
-                f"src.{source}.{module_name}"
-                if (Path.cwd() / "src" / source / f"{module_name}.py").is_file()
+                f"{source}.{module_name}"
+                if (
+                    Path.cwd() / "/".join(source.split(".")) / f"{module_name}.py"
+                ).is_file()
                 else ""
             )
 
-        for source in ["routines", "engine"]:
+        for source in ["src.routines", "src.engine", "tests"]:
             if path := check_path(source):
                 return path
         raise ModuleNotFoundError(f"Module not found: {module_name}.")
