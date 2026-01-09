@@ -21,7 +21,7 @@ from pathlib import Path
 import sys
 from typing import cast
 
-from src import Cli, Logger
+from src import Cli, Logger, init_engine
 
 # ============================================================
 # CONSTANTS
@@ -210,20 +210,11 @@ def handle_kraken_error(e: Logger.KrakenError) -> None:
     logger.critical(f"{e}".split("/;")[0][:-1] + ": ", end="/;cm;bo/")
     logger.write(stream.getvalue(), ansi=False)
     logger.print("/;")
-    handle_uncaught_exception(e)
+    Logger.traceback(e)
 
 
 def handle_uncaught_exception(e: Exception):
-    import traceback
-
-    logger = Logger.get("traceback")
-    if not isinstance(e, Logger.KrakenError) and e.args:
-        logger.critical(f"{e} ({type(e).__name__})")
-    for frame in traceback.extract_tb(e.__traceback__)[::-1]:
-        logger.debug(
-            {frame.name: f"{frame.filename}:{frame.lineno}"},
-            force_inline=lambda k: True,
-        )
+    Logger.critical(e)
 
 
 def main() -> int:
@@ -240,16 +231,8 @@ def main() -> int:
         Exit code (0 on success, non-zero on failure).
     """
 
-    # Init engine
-    from src import init_engine, _loggers
-
-    init_engine()
-
-    # Merge all logger configs and dump final config to initialize global config file
-    for logger in _loggers.values():
-        logger.get_config().dump(target="global")
-
     try:
+        init_engine()
         cli = False
         args = sys.argv[1:]
         dispatcher = ModuleDispatcher()

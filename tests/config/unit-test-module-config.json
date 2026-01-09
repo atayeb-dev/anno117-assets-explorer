@@ -8,8 +8,8 @@
         "config": {
             "verbose": false
         },
-        "unit-test": {
-            "animate": true
+        "default": {
+            "animate": false
         }
     }
 }

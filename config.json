@@ -7,14 +7,16 @@
             "verbose": false
         },
         "cli": {
-            "animate": true
+            "animate": true,
+            "verbose": false
         },
         "traceback": {
             "animate": false,
             "styles": {
                 "objk": "cr",
                 "str": "cm"
-            }
+            },
+            "verbose": true
         }
     }
 }

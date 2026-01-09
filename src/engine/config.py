@@ -209,12 +209,14 @@ class Config:
             raise ConfigError("Cannot reload config for module when key is not nested.")
         unload = module is None
         if unload:
+            self.nested = True
             self.specify_file_path()
             logger().debug(
                 f"Module config for '{self._key}' unloaded.", verbose_only=True
             )
         else:
-            self.specify_file_path(get(module.get_config_key())._config_file)
+            self.nested = module.get_config_key()
+            self.specify_file_path(get(self.nested)._config_file)
             logger().debug(
                 f"Module config for '{self._key}' loaded from '{self._config_file}'.",
                 verbose_only=True,
@@ -253,33 +255,43 @@ class Config:
 
     def dump(self, target: Literal["specific", "global"] = "specific") -> None:
         """Dump the current configuration to a file."""
+
+        # Determine dump file path
         dump_file = (
             _global_config_file_path if target == "global" else self._config_file
         )
-        dump_dict = (
-            self._specific_config_dict
-            if target == "specific"
-            else self._merged_config_dict
-        )
-        dump_data = (
-            utilities.nest_dict(dump_dict, self._key)
-            if self.nested or target == "global"
-            else dump_dict
-        )
 
-        _dump_dict_to_file(dump_file, dump_data)
+        # Check dump file path
+        if dump_file is None:
+            raise ConfigError("Cannot dump non-specific nested config.")
+
+        # Prepare dump dict
+        dump_dict = self._specific_config_dict
+        if target == "global" or self.nested:
+            dump_dict = utilities.nest_dict(dump_dict, self._key)
+
+        # Dump to file
+        _dump_dict_to_file(dump_file, dump_dict)
+
+        # Update parent config RAM if nested
+        if isinstance(self.nested, str):
+            parent_cfg = get(self.nested)
+            logger().debug(
+                f"Updating parent config '{self.nested}' in RAM after dumping '{self._key}'.\nParent:",
+                parent_cfg._specific_config_dict,
+                "\n/;cm;bo/With:/;",
+                dump_dict,
+                verbose_only=True,
+            )
+            parent_cfg._specific_config_dict = utilities.deep_merge_dicts(
+                parent_cfg._specific_config_dict, dump_dict
+            )
+            parent_cfg._merged_config_dict = utilities.deep_merge_dicts(
+                parent_cfg._merged_config_dict, dump_dict
+            )
+
+        # Success.
         logger().success(f"Config {self._key} dumped to '{dump_file}'.")
-
-    def delete_file(self) -> None:
-        """Delete the configuration file."""
-        if self.nested:
-            raise ConfigError("Cannot delete config file from nested config.")
-        config_path = self._config_file
-        if config_path.is_file():
-            config_path.unlink()
-            logger().success(f"Config file '{config_path.absolute()}' deleted.")
-        else:
-            logger().error(f"Failed to delete config file: '{config_path.absolute()}'.")
 
     def to_dict(self) -> dict:
         return copy.deepcopy(self._specific_config_dict)

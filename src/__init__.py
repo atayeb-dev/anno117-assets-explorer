@@ -1,3 +1,6 @@
+# Standard library imports
+import sys
+
 # Utilities
 from . import utils as utilities
 
@@ -17,31 +20,40 @@ def init_engine(verbose: bool = False) -> None:
     global _loggers, _configs, _modules
 
     # Create default logger
-    _loggers["default"] = Logger.create_default(verbose)
-
-    # Initialize global config. Setup the config logger to use the default logger
-    _loggers["config"] = _loggers["default"]
+    _loggers["default"] = Logger.create_default(stream=sys.stdout, verbose=verbose)
 
     # load the default logger config, keep verbosity.
     _loggers["default"].load_config(trust="dict", config_dict={"verbose": verbose})
 
-    # Create engine loggers
+    # Engine loggers default configs
     engine_logger_configs = {
-        "cli": {"animate": True},
-        "traceback": {"styles": {"objk": "cr", "str": "cm"}},
-        # Swaps the config logger to use its own logger, remove the verbosity.
-        "config": {"verbose": False},
+        "traceback": {
+            "dict": {
+                "animate": False,
+                "verbose": True,
+                "styles": {"objk": "cr", "str": "cm"},
+            },
+            "stream": sys.stderr,
+        },
+        "cli": {"dict": {"animate": True, "verbose": False}, "stream": sys.stdout},
+        # init config last to preserve default logger while loading.
+        "config": {"dict": {"verbose": False}, "stream": sys.stdout},
     }
-    for name, config_dict in engine_logger_configs.items():
-        _loggers[name] = Logger.create(
-            name=name, stream=_loggers["default"]._stream, config_dict=config_dict
+
+    # Create engine loggers
+    for name, logger in engine_logger_configs.items():
+        Logger.create(
+            name=name,
+            stream=logger["stream"],
+            config_dict=logger["dict"],
         )
 
-    # Reload the default logger from its config file.
+    # Reload the default logger from its the config file.
     _loggers["default"].reload_config()
 
-    # Swap the config logger to use its own logger, remove the verbosity.
-    # _loggers["config"] = Logger.create("config", {"verbose": False})
+    # Dump all loggers config to global config file.
+    for logger in _loggers.values():
+        logger.get_config().dump(target="global")
 
 
 # Exports

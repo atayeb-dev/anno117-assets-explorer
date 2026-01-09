@@ -3,7 +3,7 @@
 # ============================================================
 
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from src import Config
@@ -518,17 +518,43 @@ class Logger:
                         sleep(random.uniform(0.01, 0.03))
 
 
-def create_default(verbose: bool = False, stream=sys.stdout) -> Logger:
+def create_default(stream: TextIO, verbose: bool = False) -> Logger:
     global _default_config
     _default_config["verbose"] = verbose
     return Logger(name="default", stream=stream)
 
 
 def create(name: str, stream: TextIO = sys.stdout, config_dict: dict = {}) -> Logger:
+    from src import _loggers
+
     """Create a new logger by name."""
     logger = Logger(name=name, stream=stream)
+    if name in _loggers.keys():
+        raise RuntimeError(f"Logger '{name}' already exists.")
     logger.load_config(config_dict=config_dict)
+    _loggers[name] = logger
     return logger
+
+
+def critical(message: str = "", ex: Exception = None, traceback=True) -> str:
+    logger = get("traceback", fallback=True)
+    if message:
+        logger.critical(f"{message}")
+    elif ex is not None:
+        logger.critical(f"({type(ex).__name__}) {ex} ")
+    if traceback and ex is not None:
+        traceback(ex)
+
+
+def traceback(ex: Exception) -> str:
+    import traceback
+
+    logger = get("traceback", fallback=True)
+    for frame in traceback.extract_tb(ex.__traceback__)[::-1]:
+        logger.debug(
+            {frame.name: f"{frame.filename}:{frame.lineno}"},
+            force_inline=lambda k: True,
+        )
 
 
 def get(name: str = "default", fallback=False) -> Logger:
