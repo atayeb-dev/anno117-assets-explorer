@@ -8,27 +8,24 @@ Provides a custom ArgumentParser that raises exceptions instead of exiting.
 # IMPORTS
 # ============================================================
 
-import re
-import sys
 
-import src.engine.config as Config
-import src.engine.logger as Logger
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src import Logger, Config
+
+import re, sys
 from pathlib import Path
 from types import ModuleType
+from typing import Callable, Tuple, Literal
 from tkinter import Tk, filedialog
-from typing import Callable, Tuple
-
-_cli_logger: Logger.Logger = None
 
 
-def init_logger():
-    global _cli_logger
-    _cli_logger = Logger.get("cli")
+def logger() -> Logger.Logger:
+    from src import Logger
 
-
-# ============================================================
-# ARGUMENT PARSING
-# ============================================================
+    return Logger.get("cli", fallback=True)
 
 
 class CliError(Exception):
@@ -37,8 +34,7 @@ class CliError(Exception):
         super().__init__(message)
 
     def solve(self) -> list[str]:
-        _cli_logger.critical(f"Ignoring error: {self}")
-        return []
+        logger().critical(f"Solve error: {self}")
 
 
 class CliHelpRequested(CliError):
@@ -63,7 +59,6 @@ class CliArgumentError(CliError):
         super().__init__(message)
 
     def solve(self):
-        global _cli_logger
         if self.type == "required":
             self.argument.prompt_for_value(
                 f"Please provide a value for required argument {self.argument.long}: "
@@ -80,7 +75,7 @@ class CliArgumentError(CliError):
         elif self.type == "unexpected_value":
             self.argument.clean_invalid_values()  # FIXME: maybe use reset instead, see with usage what fits better
             self.argument.prompt_for_value(
-                f"Please provide valid value(s) for argument {self.argument.long} (accepted: {self.argument.accepted_values}): "
+                f"{self.argument._raw_values} Please provide valid value(s) for argument {self.argument.long} (accepted: {self.argument.accepted_values}): "
             )
         elif self.type.startswith("not_a_file"):
             self.argument.reset()
@@ -92,9 +87,6 @@ class CliArgumentError(CliError):
             return self.argument.prompt_for_value(
                 f"Please provide valid directory(ies) path(s) for argument {self.argument.long}: "
             )
-
-
-from typing import Literal
 
 
 class CliFile(Path):
@@ -138,7 +130,8 @@ class CliArgument:
         # prepare bool type handling
         if self.type == bool:
             if not self.accepted_values:
-                self.accepted_values = ["y", "yes", "n", "no", "true", "false"]
+                self.accepted_values = ["Y", "Yes", "N", "No", "True", "False"]
+                self.accepted_values.extend(v.lower() for v in [*self.accepted_values])
             if self.default is None:
                 self.default = False
         # wrap default values in array if needed
@@ -166,7 +159,14 @@ class CliArgument:
             self._raw_values = (
                 [str(c) for c in config_value]
                 if isinstance(config_value, list)
-                else shlex.split(config_value)
+                else (
+                    shlex.split(config_value)
+                    if isinstance(config_value, str)
+                    else [str(config_value)]
+                )
+            )
+            logger().debug(
+                f"Read argument {self.long} raw values from config: {self._raw_values}"
             )
             self.provided = True
 
@@ -285,14 +285,13 @@ class CliArgument:
 
         root.destroy()
         root.update()
-        _cli_logger.print()  # New line after GUI dialog
+        logger().print()  # New line after GUI dialog
         return filepath
 
     def prompt_user(self, message: str) -> str:
         """Prompt user for input with a message."""
-        global _cli_logger
 
-        _cli_logger.prompt(f"{message}", end="")
+        logger().prompt(f"{message}", end="")
 
         if self.type in [CliFile, CliDir] and self._parser._module._config.get(
             "cli.gui_file_dialogs", False
@@ -302,17 +301,17 @@ class CliArgument:
             input_value = input().strip()
         if input_value == "":
             input_value = self.default
-        _cli_logger.clean_lines(1)
-        _cli_logger.prompt(f"{message}", end="", instant=True)
+        logger().clean_lines(1)
+        logger().prompt(f"{message}", end="", instant=True)
 
         if input_value is None or (
             self.type == bool and not self._parse_bool_value(input_value)
         ):
-            _cli_logger.error(f"{input_value}", instant=True)
+            logger().error(f"{input_value}", instant=True)
         elif input_value == "":
-            _cli_logger.print(f"/;cw;di/(empty)/;", instant=True)
+            logger().print(f"/;cw;di/(empty)/;", instant=True)
         else:
-            _cli_logger.success(f"{input_value}", instant=True)
+            logger().success(f"{input_value}", instant=True)
 
         return input_value
 
@@ -337,28 +336,27 @@ class CliArgument:
         self._raw_values.extend(args)
 
 
-CLI_ARGUMENTS: list[CliArgument] = [
-    CliArgument(
-        "--print-args",
-        short="-p",
-        expect="many",
-        accepted_values=["all", "provided", "full"],
-        type=str,
-        default="provided",
-    ),
-    CliArgument("--help", short="-h", type=bool),
-    CliArgument("--silent", short="-s", type=bool),
-    CliArgument("--confirm", short="-c", type=bool),
-]
-
-
 class CliArgumentParser:
 
     def __init__(self, module: CliModule):
         self._module = module
         self._cli_args = dict[str, CliArgument]()
         self._short_cli_args_mapping = dict[str, str]()
-        self.add_args(*CLI_ARGUMENTS)
+
+        # Default cli arguments
+        self.add_args(
+            CliArgument(
+                "--print-args",
+                short="-p",
+                expect="many",
+                accepted_values=["all", "provided", "full"],
+                type=str,
+                default="provided",
+            ),
+            CliArgument("--help", short="-h", type=bool),
+            CliArgument("--silent", short="-s", type=bool),
+            CliArgument("--confirm", short="-c", type=bool),
+        )
 
     def print_args(self):
 
@@ -367,15 +365,14 @@ class CliArgumentParser:
                 arg._get_value() if not "full" in self._get_arg("--print-args") else arg
             )
 
-        global _cli_logger
         if "all" in self._get_arg("--print-args"):
-            _cli_logger.debug(
+            logger().debug(
                 " CLI Arguments: ",
                 {k: obtain(v) for k, v in self._cli_args.items()},
                 force_inline=lambda k: "accepted_values" in k,
             )
         elif "provided" in self._get_arg("--print-args"):
-            _cli_logger.debug(
+            logger().debug(
                 " CLI Arguments: ",
                 {
                     k: obtain(v)
@@ -385,7 +382,7 @@ class CliArgumentParser:
                 force_inline=lambda k: "accepted_values" in k,
             )
         else:
-            _cli_logger.debug(
+            logger().debug(
                 " CLI Arguments: ",
                 {
                     k: obtain(v)
@@ -508,21 +505,20 @@ class CliModule:
 
     def __init__(self):
         """Initialize CLI module with arguments."""
-        import sys
+        from src import Config
 
-        module = sys.modules[self.__class__.__module__]
-        self._module: ModuleType = module
+        self._module: ModuleType = sys.modules[self.__class__.__module__]
         self._simple_module_name: str = self._module.__name__.split(".")[-1]
         self._module_name: str = self._module.__name__
         try:
             self._config = Config.get(self.get_config_key())
         except Config.ConfigError:
-            self._config = Config.get().create(self.get_config_key())
-            _cli_logger.debug(
+            self._config = Config.create(self.get_config_key())
+            logger().debug(
                 f"Created config for module '{self._module_name}': ", verbose_only=True
             )
             self._config.print(
-                output=lambda *args, **kwargs: _cli_logger.debug(
+                output=lambda *args, **kwargs: logger().debug(
                     *args, **kwargs, verbose_only=True
                 )
             )
@@ -584,7 +580,9 @@ class CliModule:
     def execute(self, module_args: list[str] = []) -> int:
         """Execute the module: parse arguments and run."""
         try:
-            Config.get().reload_for_module(self)
+            from src import Config
+
+            Config.reload_for_module(self)
             for a in self._parser._cli_args.values():
                 a.reset()
             self._config.reload()
@@ -595,11 +593,11 @@ class CliModule:
             return result if isinstance(result, int) else 0
         except CliHelpRequested:
             if help_text := self.help():
-                _cli_logger.prompt("Help requested!")
-                _cli_logger.print(help_text)
+                logger().prompt("Help requested!")
+                logger().print(help_text)
             else:
-                _cli_logger.critical("Nothing can help you now...")
+                logger().critical("Nothing can help you now...")
             return 0
         finally:
-            Config.get().reload_for_module()
+            Config.reload_for_module()
             self.finalize()

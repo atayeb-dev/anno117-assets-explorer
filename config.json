@@ -1,45 +1,16 @@
 {
-    "unit_test_module": {
-        "--print-args": [
-            "modes",
-            "test-data",
-            "print-args"
-        ]
-    },
     "loggers": {
         "default": {
-            "animate": false,
-            "flush_rate": [
-                5,
-                15
-            ],
-            "max_inline": 160,
-            "verbose": false,
-            "styles": {
-                "enable": true,
-                "sep": "cw;di",
-                "obji": "cb;di",
-                "objk": "cg;bo",
-                "arri": "cb;di",
-                "str": "cw;it",
-                "bool": "cc",
-                "num": "cb",
-                "unkn": "cr;di"
-            },
-            "debug": {
-                "enable": false,
-                "print_indent_chars": false
-            }
-        },
-        "cli": {
-            "animate": true,
-            "gui_file_dialogs": false,
-            "verbose": false
+            "animate": true
         },
         "config": {
             "verbose": false
         },
+        "cli": {
+            "animate": true
+        },
         "traceback": {
+            "animate": false,
             "styles": {
                 "objk": "cr",
                 "str": "cm"

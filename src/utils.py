@@ -11,7 +11,6 @@ Provides reusable functions for file handling, XML processing, and naming conven
 import xml.etree.ElementTree as ET
 from fnmatch import fnmatch
 from pathlib import Path
-from glom import glom
 import copy
 
 
@@ -23,7 +22,7 @@ def ensure_nested_path(d: dict, path: str, push: dict = {}) -> dict:
         if key not in current:
             current[key] = {}
         current = current[key]
-    current.update(push)
+    current.update(copy.deepcopy(push))
     return current
 
 
@@ -33,8 +32,13 @@ def nest_dict(dict: dict, path: str) -> dict:
     return nested_config_dict
 
 
-def ensure_get_dict(d: dict, path: str, default: dict | None = {}) -> dict | None:
-    return glom(d, path, default=default)
+def dict_path(d: dict, path: str, default: any = None) -> any | None:
+    """Get value from nested dict using dotted path."""
+    for key in path.split("."):
+        if not isinstance(d, dict) or key not in d:
+            return default
+        d = d[key]
+    return d
 
 
 def deep_merge_dicts(*dicts: dict) -> dict:
@@ -56,28 +60,6 @@ def _deep_merge_dicts(d1: dict, d2: dict) -> dict:
         else:
             d1[key] = copy.deepcopy(value)
     return d1
-
-
-def make_json_serializable(obj):
-    """
-    Convert non-JSON-serializable objects (like Path) to JSON-compatible types.
-
-    Recursively processes dicts and lists to convert any Path objects to strings.
-
-    Args:
-        obj: Object to convert (dict, list, Path, or any other type).
-
-    Returns:
-        JSON-serializable version of the object.
-    """
-    if isinstance(obj, dict):
-        return {k: make_json_serializable(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [make_json_serializable(item) for item in obj]
-    elif isinstance(obj, Path):
-        return str(obj)
-    else:
-        return obj
 
 
 # ============================================================
@@ -200,3 +182,39 @@ def load_xml_file(file_path: Path) -> ET.Element | None:
         Root element of parsed XML, or None if error.
     """
     return ET.parse(file_path)
+
+
+# ============================================================
+# MODULE UTILITIES
+# ============================================================
+
+
+def reload_module_preserving_globals(mod):
+    import importlib
+    from src import Logger
+
+    if not "preserve_globals" in dir(mod):
+        Logger.get("cli").debug(
+            f"Module {mod.__name__} does not specify preserve_globals attribute.",
+            verbose_only=True,
+        )
+        return importlib.reload(mod)
+
+    # Save globals.
+    saved_state = {
+        attr_name: getattr(mod, attr_name)
+        for attr_name in getattr(mod, "preserve_globals", [])
+    }
+
+    # Reload module.
+    mod = importlib.reload(mod)
+
+    # Restore globals.
+    for attr_name, value in saved_state.items():
+        setattr(mod, attr_name, value)
+        Logger.get("cli").debug(
+            f"Restored global {attr_name} in module {mod.__name__}.",
+            verbose_only=True,
+        )
+
+    return mod

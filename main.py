@@ -15,28 +15,17 @@ Architecture:
 # IMPORTS
 # ============================================================
 
-import argparse
 import importlib
 from io import StringIO
 from pathlib import Path
 import sys
 from typing import cast
-import src.engine.config as Config
-import src.engine.logger as Logger
-import src.engine.cli as Cli
 
+from src import Cli, Logger
 
 # ============================================================
 # CONSTANTS
 # ============================================================
-
-_current_module = None  # type: str
-_cached_modules: dict[str, Cli.CliModule] = {}
-
-
-def get_current_module():
-    global _current_module
-    return _current_module
 
 
 class LaunchError(Exception):
@@ -67,6 +56,7 @@ class LaunchError(Exception):
 class ModuleDispatcher:
 
     def _interactive_prompt(self) -> int:
+        from src import Logger
 
         logger = Logger.get()
         logger.print("==")
@@ -149,7 +139,7 @@ class ModuleDispatcher:
 
             invoke_name = self._resolve_module_name(module_name)
             mod = importlib.import_module(invoke_name)
-            mod = importlib.reload(mod)  # Hot reload for development
+            mod = importlib.reload(mod)
 
             logger.print(f"Invoking module: {module_name}: ", module_args)
             cli_module_class = getattr(
@@ -215,10 +205,11 @@ def handle_error(e: BaseException, raise_uncaught: bool = False) -> None:
 def handle_kraken_error(e: Logger.KrakenError) -> None:
     stream = StringIO()
     kraken = "/;" + "/;".join(f"{e}".split("/;")[1:])
-    Logger.get().write(kraken, ansi=False, stream=stream)
-    Logger.get().critical(f"{e}".split("/;")[0][:-1] + ": ", end="/;cm;bo/")
-    Logger.get().write(stream.getvalue(), ansi=False)
-    Logger.get().print("/;")
+    logger = Logger.get("traceback")
+    logger.write(kraken, ansi=False, stream=stream)
+    logger.critical(f"{e}".split("/;")[0][:-1] + ": ", end="/;cm;bo/")
+    logger.write(stream.getvalue(), ansi=False)
+    logger.print("/;")
     handle_uncaught_exception(e)
 
 
@@ -248,21 +239,15 @@ def main() -> int:
     Returns:
         Exit code (0 on success, non-zero on failure).
     """
-    global _current_module
-    _current_module = "main"
 
     # Init engine
-    Logger.init_default()
-    Config.init_global()
-    Logger.init_loggers()
-    Config.init_logger()
-    Cli.init_logger()
+    from src import init_engine, _loggers
+
+    init_engine()
 
     # Merge all logger configs and dump final config to initialize global config file
-    # if not Config._global_config_file_path.exists():
-    for logger in Logger._loggers.values():
-        logger.get_config().merge()
-    Config.get().dump()
+    for logger in _loggers.values():
+        logger.get_config().dump(target="global")
 
     try:
         cli = False
@@ -296,4 +281,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import sys
+
     sys.exit(main())
