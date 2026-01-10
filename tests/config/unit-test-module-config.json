@@ -2,14 +2,18 @@
     "cli": {
         "gui_file_dialogs": true
     },
-    "--modes": "data-print",
-    "--test-data": "tests/medium-data.json tests/small-data.json",
     "loggers": {
         "config": {
             "verbose": false
         },
         "default": {
             "animate": false
+        },
+        "unit-test": {
+            "data_print": {
+                "decorate_items": true
+            },
+            "debug": {}
         }
     }
 }

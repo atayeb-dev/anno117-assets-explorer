@@ -129,15 +129,27 @@ class Config:
             specific_config_file_dict = utilities.nest_dict(
                 specific_config_file_dict, self._key
             )
+
+        # If nested and specified, extract also the nested dict from its parent dict, and re-nest
+        nested_global_config_file_dict = {}
+        if isinstance(self.nested, str):
+            nested_global_config_file_dict = utilities.nest_dict(
+                utilities.dict_path(
+                    global_config_file_dict, f"{self.nested}.{self._key}", default={}
+                ),
+                self._key,
+            )
+
         # Extract only the relevant sub-dict from global config file keeping nesting
         global_config_file_dict = utilities.nest_dict(
             utilities.dict_path(global_config_file_dict, self._key, default={}),
             self._key,
         )
 
-        # Get a merged version of global and specific config files
+        # Get a merged version of global and specific dicts from files
         merged_config_file_dict = utilities.deep_merge_dicts(
             copy.deepcopy(global_config_file_dict),
+            copy.deepcopy(nested_global_config_file_dict),
             copy.deepcopy(specific_config_file_dict),
         )
 
@@ -180,9 +192,11 @@ class Config:
             {
                 "trust": trust,
                 "config_file": self._config_file,
+                "nested": self.nested,
                 "update_config_dict": update_config_dict,
                 "specific_config_dict": specific_config_dict,
                 "specific_config_file_dict": specific_config_file_dict,
+                "nested_global_config_file_dict": nested_global_config_file_dict,
                 "global_config_file_dict": global_config_file_dict,
                 "merged_config_file_dict": merged_config_file_dict,
                 "self.specific_config": self._specific_config_dict,

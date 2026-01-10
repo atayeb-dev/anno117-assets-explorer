@@ -214,6 +214,7 @@ def handle_kraken_error(e: Logger.KrakenError) -> None:
 
 
 def handle_uncaught_exception(e: Exception):
+    Logger.traceback(e)
     Logger.critical(e)
 
 

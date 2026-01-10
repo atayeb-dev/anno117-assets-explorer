@@ -12,11 +12,26 @@
         },
         "traceback": {
             "animate": false,
-            "styles": {
+            "data_print": {
                 "objk": "cr",
                 "str": "cm"
             },
-            "verbose": true
+            "verbose": true,
+            "styles": {
+                "objk": "cr",
+                "str": "cm"
+            }
         }
+    },
+    "unit_test_module": {
+        "loggers": {
+            "default": {
+                "data_print": {
+                    "decorate_items": false
+                }
+            }
+        },
+        "--modes": "data-print",
+        "--test-data": "tests/medium-data.json tests/small-data.json"
     }
 }

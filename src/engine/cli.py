@@ -369,7 +369,7 @@ class CliArgumentParser:
             logger().debug(
                 " CLI Arguments: ",
                 {k: obtain(v) for k, v in self._cli_args.items()},
-                force_inline=lambda k: "accepted_values" in k,
+                force_inline="accepted_values",
             )
         elif "provided" in self._get_arg("--print-args"):
             logger().debug(
@@ -379,7 +379,7 @@ class CliArgumentParser:
                     for k, v in self._cli_args.items()
                     if v.provided and k != "--print-args"
                 },
-                force_inline=lambda k: "accepted_values" in k,
+                force_inline="accepted_values",
             )
         else:
             logger().debug(
@@ -389,7 +389,7 @@ class CliArgumentParser:
                     for k, v in self._cli_args.items()
                     if k[2:] in self._get_arg("--print-args")
                 },
-                force_inline=lambda k: "accepted_values" in k,
+                force_inline="accepted_values",
             )
 
     def add_args(

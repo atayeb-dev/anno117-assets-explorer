@@ -101,10 +101,12 @@ class UnitTest(Cli.CliModule):
             config_dict = {
                 "animate": True,
                 "flush_rate": [2, 3],
-                "styles": {
-                    "objk": "cm;bo",
-                    "str": "cw;it;di",
-                    "sep": "cw",
+                "data_print": {
+                    "styles": {
+                        "objk": "cm;bo",
+                        "str": "cw;it;di",
+                        "sep": "cw",
+                    }
                 },
             }
             self._unit_test_logger.prompt("Test config dict: ", config_dict)
@@ -141,8 +143,10 @@ class UnitTest(Cli.CliModule):
                         "Printing with: ",
                         modes,
                         data,
-                        compact=lambda k: "compact" in modes,
-                        force_inline=lambda k: "inline" in modes,
+                        data_print={
+                            "compact": "compact" in modes,
+                            "force_inline": "inline" in modes,
+                        },
                     )
                 else:
                     self._unit_test_logger.prompt("Printing: ", data)
@@ -155,9 +159,7 @@ class UnitTest(Cli.CliModule):
                     self._unit_test_logger.success(f"Loaded test data from {read_path}")
                     print_test_data(test_data)
                 except Exception as e:
-                    self._unit_test_logger.critical(
-                        f"Failed to load test data from: {read_path} ({type(e).__name__})"
-                    )
+                    Logger.critical(f"Failed to load test data from: {read_path}")
 
             if self.get_arg("--test-data"):
                 for read_path in cast(list[Cli.CliFile], self.get_arg("--test-data")):
@@ -168,7 +170,7 @@ class UnitTest(Cli.CliModule):
                     self._unit_test_logger.prompt(f"Reading test data from {read_dir}")
                     for read_path in dir_path.glob("*.json"):
                         read_print_test_data(read_path)
-            else:
+            if not self.get_arg("--test-data") and not self.get_arg("--test-data-dir"):
                 self._unit_test_logger.prompt(
                     "No test data provided. Printing logger configuration:"
                 )

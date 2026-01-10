@@ -3,7 +3,8 @@
 # ============================================================
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Callable, cast
 
 if TYPE_CHECKING:
     from src import Config
@@ -129,27 +130,64 @@ def _detect_ansi_pattern(string: str) -> Tuple[str, str]:
     )
 
 
-_default_config = {
+_default_kwargs = {
     "animate": False,
     "flush_rate": [5, 15],
-    "max_inline": 160,
+    "ansi": True,
     "verbose": True,
-    "styles": {
-        "enable": True,
-        "sep": "cw;di",
-        "obji": "cb;di",
-        "objk": "cg;bo",
-        "arri": "cb;di",
-        "str": "cw;it",
-        "bool": "cc",
-        "num": "cb",
-        "unkn": "cr;di",
+    "verbose_only": False,
+    "data_print": {
+        "max_inline": 160,
+        "compact": False,
+        "force_inline": False,
+        "decorate_items": True,
+        "styles": {
+            "enable": True,
+            "sep": "cw;di",
+            "obji": "cb;di",
+            "objk": "cg;bo",
+            "arri": "cb;di",
+            "str": "cw;it",
+            "bool": "cc",
+            "path": "cc;it",
+            "num": "cb",
+            "unkn": "cr;di",
+        },
     },
     "debug": {
-        "enable": False,
+        "fallback": False,
         "print_indent_chars": False,
     },
 }
+
+
+class LoggerKwargs:
+
+    def __init__(self, logger: Logger, **kwargs):
+        self._logger = logger
+        self._kwargs = kwargs
+
+    def get(self, dict_path: str):
+
+        # Get value in knwargs first
+        value = utilities.dict_path(self._kwargs, dict_path)
+        if value is not None:
+            return value
+
+        # Prepare default fallback
+        if self._logger._name == "default":
+            # We are in default logger, use hardcoded defaults
+            default = utilities.dict_path(_default_kwargs, dict_path)
+            if default is None:
+                raise RuntimeError(f"Missing Logger default kwarg key: '{dict_path}'")
+        else:
+            # Get default from default logger
+            default = LoggerKwargs(get("default")).get(dict_path)
+
+        # Get value from config with default fallback
+        if self._logger._config is not None:
+            return self._logger._config.get(dict_path, default=default)
+        return default
 
 
 class DataPrinter:
@@ -167,65 +205,92 @@ class DataPrinter:
             stream=StringIO(),
         )
         # Write the data to the temporary logger forcing inline mode
-        logger.write(dl, ansi=False, force_inline=lambda k: True)
-        # Check we have the remaining space to inline
-        return len(self._logger._indents[-1]) + len(
-            logger._stream.getvalue()
-        ) < self._logger._safe_get_config("max_inline")
+        logger.write(
+            dl,
+            ansi=False,
+            data_print={
+                "force_inline": True,
+                "compact": self._logger._kwargs.get("data_print.compact"),
+                "styles": {"enable": False},
+            },
+        )
+
+        max_inline = self._logger._kwargs.get("data_print.max_inline")
+        remaining = max_inline - len(self._logger._indents[-1])
+        to_write = len(cast(StringIO, logger._stream).getvalue())
+        # print(f"[{to_write}/{remaining}]", end="")
+        if to_write > remaining:
+            return False
+        return True
+
+    def get_style(self, style: str) -> str:
+        return self._logger._kwargs.get(f"data_print.styles.{style}")
 
     def build_simple_style(self, style: str, text: str) -> str:
-        if not self._logger._safe_get_config("styles.enable"):
+        if not self._logger._kwargs.get("data_print.styles.enable"):
             return text
-        style_config = self._logger._safe_get_config(f"styles.{style}")
-        if style_config is None:
-            return text
-        return f"/;{style_config}/{text}/;"
+        return f"/;{self.get_style(style)}/{text}/;"
 
     def full_current_path(self) -> str:
         return ".".join(map(str, self._logger._current_path))
 
+    def force_inline(self) -> bool:
+        force_inline = self._logger._kwargs.get("data_print.force_inline")
+        if isinstance(force_inline, bool):
+            return force_inline
+        elif isinstance(force_inline, str) and force_inline:
+            return re.search(rf"{force_inline}", self.full_current_path()) is not None
+        return False
+
+    def compact(self) -> bool:
+        compact = self._logger._kwargs.get("data_print.compact")
+        if isinstance(compact, bool):
+            return compact
+        elif isinstance(compact, str) and compact:
+            return re.search(rf"{compact}", self.full_current_path()) is not None
+        return False
+
     def decorate(self, decoration: str, type: str = "") -> str:
         path = self._logger._current_path
-        style_config = lambda key: self._logger._safe_get_config(f"styles.{key}")
-        build = lambda style, text: self.build_simple_style(style, text)
         if decoration == "start" or decoration == "end":
             str_decoration = ""
             if type == "list":
                 str_decoration = "[" if decoration == "start" else "]"
             elif type == "dict":
                 str_decoration = "{" if decoration == "start" else "}"
-            return build("sep", str_decoration)
+            return self.build_simple_style("sep", str_decoration)
         elif decoration == "comma":
-            return build("sep", ",")
+            return self.build_simple_style("sep", ",")
         elif decoration == "item":
-            if self._logger._safe_get_config("styles.enable"):
+            if self._logger._kwargs.get("data_print.decorate_items"):
                 if isinstance(path[-1], int):
-                    return build("arri", f" {str(path[-1])} ")
+                    return self.build_simple_style("arri", f" {str(path[-1])} ")
                 else:
-                    return f" /;_arrow/{style_config("obji")};//; "
+                    return f" /;_arrow/{self.get_style("obji")};//; "
         elif decoration == "key":
-            return build("objk", str(path[-1]) + build("sep", ":"))
+            return self.build_simple_style(
+                "objk", str(path[-1]) + self.build_simple_style("sep", ":")
+            )
         return ""
 
     def decorate_value(self, value: any) -> str:
-        build = lambda style, text: self.build_simple_style(style, text)
         if isinstance(value, bool):
-            return build("bool", str(value))
+            return self.build_simple_style("bool", str(value))
         elif isinstance(value, int) or isinstance(value, float):
-            return build("num", str(value))
+            return self.build_simple_style("num", str(value))
         elif isinstance(value, str):
-            return build("str", f"'{str(value)}'")
+            return self.build_simple_style("str", f"'{str(value)}'")
+        elif isinstance(value, Path):
+            return self.build_simple_style("path", f"{str(value)}")
         else:
-            return build("unkn", f"{str(value)}")
+            return self.build_simple_style("unkn", f"{str(value)}")
 
-    def _write_dict(
-        self, d: dict, force_inline=lambda k: False, compact=lambda k: False
-    ) -> None:
+    def _write_dict(self, d: dict) -> None:
         self._logger._write(self.decorate("start", type="dict"))
         self._logger._indent()
-        inline = self._default_inline(d) or force_inline(self.full_current_path())
+        inline = self._default_inline(d) or self.force_inline()
         inlining = inline
-        compacting = compact(self.full_current_path())
+        compacting = self.compact()
         for key, item in d.items():
             self._logger._current_path.append(key)
             first = key == list(d.keys())[0]
@@ -239,7 +304,7 @@ class DataPrinter:
             self._logger._write(self.decorate("key"))
             if not compacting:
                 self._logger._write(" ")
-            self._write_value(item, force_inline=force_inline, compact=compact)
+            self._write_value(item)
             if not last:
                 self._logger._write(self.decorate("comma"))
                 if not compacting:
@@ -249,14 +314,12 @@ class DataPrinter:
         self._logger._write(self.decorate("end", type="dict"))
         self._logger._dindent()
 
-    def _write_list(
-        self, l: list, force_inline=lambda k: False, compact=lambda k: False
-    ) -> None:
+    def _write_list(self, l: list) -> None:
         self._logger._write(self.decorate("start", type="list"))
         self._logger._indent()
-        inline = self._default_inline(l) or force_inline(self.full_current_path())
+        inline = self._default_inline(l) or self.force_inline()
         inlining = inline
-        compacting = compact(self.full_current_path())
+        compacting = self.compact()
         for i, item in enumerate(l):
             self._logger._current_path.append(i)
             first = i == 0
@@ -267,7 +330,7 @@ class DataPrinter:
                 self._logger._new_line(" ")
             if not inline and not compacting:
                 self._logger._write(self.decorate("item"))
-            self._write_value(item, force_inline=force_inline, compact=compact)
+            self._write_value(item)
             if not last:
                 self._logger._write(self.decorate("comma"))
                 if not compacting:
@@ -277,15 +340,13 @@ class DataPrinter:
         self._logger._write(self.decorate("end", type="list"))
         self._logger._dindent()
 
-    def _write_value(
-        self, v: any, force_inline=lambda k: False, compact=lambda k: False
-    ) -> None:
+    def _write_value(self, v: any) -> None:
         if isinstance(v, dict):
-            self._write_dict(v, force_inline=force_inline, compact=compact)
+            self._write_dict(v)
         elif isinstance(v, list):
-            self._write_list(v, force_inline=force_inline, compact=compact)
+            self._write_list(v)
         elif hasattr(v, "to_dict") and callable(getattr(v, "to_dict")):
-            self._write_dict(v.to_dict(), force_inline=force_inline, compact=compact)
+            self._write_dict(v.to_dict())
         else:
             self._logger._write(self.decorate_value(v))
 
@@ -297,7 +358,6 @@ class Logger:
         name: str,
         stream: TextIO = sys.stdout,
     ):
-        global _loggers
         self._name = name
         self._stream = stream
         self._indents: list[str] = [""]
@@ -305,7 +365,7 @@ class Logger:
         self._data_printer = DataPrinter(self)
         self._current_path: list[str | int] = ["root"]
         self._config = None
-        self._wkwargs: dict = None
+        self._kwargs: LoggerKwargs = None
 
     def get_config_key(self) -> str:
         return f"loggers.{self._name}"
@@ -332,26 +392,6 @@ class Logger:
             raise RuntimeError("Logger config not loaded yet.")
         self._config.reload(trust=trust, config_dict=config_dict)
 
-    def _safe_get_config(self, key: str):
-
-        # Inline checker special case:
-        if self._name == "inline-checker":
-            return utilities.dict_path(
-                {"styles": {"enable": False}},
-                key,
-                default=utilities.dict_path(_default_config, key),
-            )
-
-        # Default fallback:
-        elif self._name == "default":
-            default = utilities.dict_path(_default_config, key)
-        else:
-            default = get("default")._safe_get_config(key)
-
-        if self._config is None:
-            return default
-        return self._config.get(key, default=default)
-
     def get_config(self) -> Config.Config:
         if self._config is None:
             raise RuntimeError("Logger config not loaded yet.")
@@ -360,19 +400,28 @@ class Logger:
     def write(self, *args, **kwargs) -> None:
         try:
             def_stream = None
-            self._wkwargs = kwargs.copy()
+            self._kwargs = LoggerKwargs(self, **kwargs)
             self._indents = [""]
             self._current_path = ["root"]
-            if "stream" in self._wkwargs.keys():
+            if "stream" in kwargs.keys():
                 def_stream = self._stream
-                self._stream = self._wkwargs["stream"]
-            self._write(*args, **kwargs)
+                self._stream = cast(TextIO, kwargs["stream"])
+            if self._kwargs.get("debug.fallback"):
+                if not self._fallback_checked:
+                    self._fallback_checked = True
+                    print("==")
+                    print("Logger internal fallback mode active.")
+                    print("==")
+                print(*args, end="", file=self._stream)
+            else:
+                self._fallback_checked = False
+                self._write(*args)
         except Exception as e:
             raise e
         finally:
             self._stream.flush()
             self._indents = [""]
-            self._wkwargs = None
+            self._kwargs = None
             if def_stream is not None:
                 self._stream = def_stream
 
@@ -425,7 +474,7 @@ class Logger:
         indents_char = self._indents[-1]
 
         if len(self._indents) > 1:
-            if self._safe_get_config("debug.print_indent_chars"):
+            if self._kwargs.get("debug.print_indent_chars"):
                 self._stream.write(indents_char)
             else:
                 self._stream.write(indent_char * len(indents_char))
@@ -437,28 +486,20 @@ class Logger:
         self._indents_buffer.truncate(0)
         self._indents_buffer.write(indents_char)
 
-    def _get_wkwargs(self, key, default: any, **kwargs) -> dict:
-        return self._wkwargs.get(key, kwargs.get(key, default))
+    def _write(self, *args) -> None:
 
-    def _write(self, *args, **kwargs) -> None:
+        animate = self._kwargs.get("animate")
+        flush_rate = self._kwargs.get("flush_rate")
+        process_ansi = self._kwargs.get("ansi")
+        verbose = self._kwargs.get("verbose")
+        verbose_only = self._kwargs.get("verbose_only")
 
-        animate = self._safe_get_config("animate")
-        flush_rate = self._safe_get_config("flush_rate")
-
-        instant = self._get_wkwargs("instant", False, **kwargs)
-        force_inline = self._get_wkwargs("force_inline", lambda k: False, **kwargs)
-        compact = self._get_wkwargs("compact", lambda k: False, **kwargs)
-        process_ansi = self._get_wkwargs("ansi", True, **kwargs)
-        verbose_only = self._get_wkwargs("verbose_only", False, **kwargs)
-
-        if verbose_only and not self._safe_get_config("verbose"):
+        if verbose_only and not verbose:
             return
 
         for arg in args:
             if not isinstance(arg, str):
-                self._data_printer._write_value(
-                    arg, force_inline=force_inline, compact=compact
-                )
+                self._data_printer._write_value(arg)
             else:
                 remaining = arg
                 security_limit = len(remaining) + 10000
@@ -504,8 +545,8 @@ class Logger:
                     # Consume the char
                     remaining = remaining[1:]
 
-                    # Check instant or no animation mode
-                    if instant or not animate:
+                    # Check no animation mode
+                    if not animate:
                         continue
 
                     # Flush based on flush rate
@@ -519,8 +560,8 @@ class Logger:
 
 
 def create_default(stream: TextIO, verbose: bool = False) -> Logger:
-    global _default_config
-    _default_config["verbose"] = verbose
+    global _default_kwargs
+    _default_kwargs["verbose"] = verbose
     return Logger(name="default", stream=stream)
 
 
@@ -536,13 +577,13 @@ def create(name: str, stream: TextIO = sys.stdout, config_dict: dict = {}) -> Lo
     return logger
 
 
-def critical(message: str = "", ex: Exception = None, traceback=True) -> str:
+def critical(message: str = "", ex: Exception = None, print_stack=True) -> str:
     logger = get("traceback", fallback=True)
     if message:
         logger.critical(f"{message}")
     elif ex is not None:
         logger.critical(f"({type(ex).__name__}) {ex} ")
-    if traceback and ex is not None:
+    if print_stack and ex is not None:
         traceback(ex)
 
 
@@ -553,7 +594,7 @@ def traceback(ex: Exception) -> str:
     for frame in traceback.extract_tb(ex.__traceback__)[::-1]:
         logger.debug(
             {frame.name: f"{frame.filename}:{frame.lineno}"},
-            force_inline=lambda k: True,
+            data_print={"force_inline": True},
         )
 
 
