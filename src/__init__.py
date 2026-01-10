@@ -4,6 +4,9 @@ import sys
 # Utilities
 from . import utils as utilities
 
+# App path
+from . import app_path as AppPath
+
 # Engine modules
 from .engine import logger as Logger
 from .engine import cli as Cli
@@ -31,7 +34,7 @@ def init_engine(verbose: bool = False) -> None:
             "dict": {
                 "animate": False,
                 "verbose": True,
-                "styles": {"objk": "cr", "str": "cm"},
+                "data_print": {"styles": {"objk": "cr", "str": "cm"}},
             },
             "stream": sys.stderr,
         },

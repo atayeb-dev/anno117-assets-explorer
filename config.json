@@ -14,13 +14,13 @@
             "animate": false,
             "data_print": {
                 "objk": "cr",
-                "str": "cm"
+                "str": "cm",
+                "styles": {
+                    "objk": "cr",
+                    "str": "cm"
+                }
             },
-            "verbose": true,
-            "styles": {
-                "objk": "cr",
-                "str": "cm"
-            }
+            "verbose": true
         }
     },
     "unit_test_module": {

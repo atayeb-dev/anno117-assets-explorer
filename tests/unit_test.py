@@ -2,9 +2,8 @@ import json
 from pathlib import Path
 import sys
 from typing import cast
-import src.engine.logger as Logger
-import src.engine.config as Config
-import src.engine.cli as Cli
+
+from src import Logger, Config, Cli, AppPath
 
 
 class UnitTest(Cli.CliModule):
@@ -49,8 +48,13 @@ class UnitTest(Cli.CliModule):
                 required=True,
                 accepted_values=["prompt", "config", "data-print", "kraken"],
             ),
-            Cli.CliArgument("--test-data", type=Cli.CliFile, expect="many"),
-            Cli.CliArgument("--test-data-dir", type=Cli.CliDir, expect="many"),
+            Cli.CliArgument(
+                "--prompt",
+                expect="many",
+                type=AppPath.AppPath,
+            ),
+            Cli.CliArgument("--test-data", type=AppPath.fpath, expect="many"),
+            Cli.CliArgument("--test-data-dir", type=AppPath.dpath, expect="many"),
             Cli.CliArgument(
                 "--data-print-modes",
                 expect="many",
@@ -63,6 +67,10 @@ class UnitTest(Cli.CliModule):
         modes = self.get_arg("--modes")
         Logger.get().print("Running UnitTest module with modes: ", modes)
         if "prompt" in modes:
+            while prompt := self.get_arg("--prompt", provide=True):
+                self._parser._get_arg("--prompt").reset()
+                self._unit_test_logger.prompt(prompt)
+
             # Simple prompt tests
             self._unit_test_logger.error("This is a test error message.")
             self._unit_test_logger.success("This is a test success message.")
@@ -151,25 +159,19 @@ class UnitTest(Cli.CliModule):
                 else:
                     self._unit_test_logger.prompt("Printing: ", data)
 
-            def read_print_test_data(read_path: any):
-                try:
-                    self._unit_test_logger.prompt(f"Loading test data from {read_path}")
-                    with open(read_path, "r", encoding="utf-8") as f:
-                        test_data = json.load(f)
-                    self._unit_test_logger.success(f"Loaded test data from {read_path}")
-                    print_test_data(test_data)
-                except Exception as e:
-                    Logger.critical(f"Failed to load test data from: {read_path}")
-
             if self.get_arg("--test-data"):
-                for read_path in cast(list[Cli.CliFile], self.get_arg("--test-data")):
-                    read_print_test_data(read_path)
+                for read_path in cast(
+                    list[AppPath.AppPath], self.get_arg("--test-data")
+                ):
+                    print_test_data(read_path.read_json())
             if self.get_arg("--test-data-dir"):
-                for read_dir in cast(list[Cli.CliDir], self.get_arg("--test-data-dir")):
+                for read_dir in cast(
+                    list[AppPath.AppPath], self.get_arg("--test-data-dir")
+                ):
                     dir_path = read_dir
                     self._unit_test_logger.prompt(f"Reading test data from {read_dir}")
                     for read_path in dir_path.glob("*.json"):
-                        read_print_test_data(read_path)
+                        print_test_data(read_path.read_json())
             if not self.get_arg("--test-data") and not self.get_arg("--test-data-dir"):
                 self._unit_test_logger.prompt(
                     "No test data provided. Printing logger configuration:"

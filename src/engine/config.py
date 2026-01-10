@@ -19,57 +19,19 @@ if TYPE_CHECKING:
 
 
 from pathlib import Path
-import copy, json, re
+import copy, re
 from typing import Literal, cast
 
-from src import utilities
-from src import Cli
+from src import utilities, AppPath, Cli
 
-_global_config_file_path = Path.cwd() / "config.json"
-_config_file_path = (
-    lambda file_prefix: Path.cwd() / "config" / f"{file_prefix}-config.json"
-)
+_merged_config_fpath = AppPath.fpath("config.json")
+_specific_config_fpath = lambda file_name: AppPath.fpath(f"config/{file_name}.json")
 
 
 def logger() -> Logger.Logger:
     from src import Logger
 
     return Logger.get("config", fallback=True)
-
-
-def _read_config_from_file(read_path: Path) -> dict:
-    try:
-        if not read_path or not read_path.is_file():
-            logger().error(
-                f"Path: {read_path} is not a file.",
-                verbose_only=True,
-            )
-        else:
-            with open(read_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            logger().success(
-                f"Loaded config from {read_path.absolute()}", verbose_only=True
-            )
-            return config
-    except Exception as e:
-        logger().error(
-            f"Failed to load config file: {read_path.absolute()}: {e}",
-            verbose_only=True,
-        )
-    return {}
-
-
-def _dump_dict_to_file(write_path: Path, config: dict):
-    write_config = utilities.deep_merge_dicts(
-        _read_config_from_file(write_path), config
-    )
-    try:
-        """Dump the current configuration to a file."""
-        write_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(write_path, "w", encoding="utf-8") as f:
-            json.dump(write_config, f, indent=4)
-    except Exception:
-        logger().error(f"Failed to write config file: {write_path.absolute()}")
 
 
 class ConfigError(Exception):
@@ -95,6 +57,30 @@ class Config:
         self.reload(trust=trust, config_dict=config_dict)
         logger().success(f"Config '{self._key}' initialized.", verbose_only=True)
 
+    def _safe_read_json(self, path: AppPath.AppPath) -> dict:
+        try:
+            if path is None:
+                return {}
+            path.validate(action="r")
+            data = path.read_json()
+            logger().success(f"Config file '{path}' read.", verbose_only=True)
+            return data
+        except AppPath.AppPathError as e:
+            logger().error(f"{e}", verbose_only=True)
+            return {}
+
+    def _safe_write_json(
+        self, path: AppPath.AppPath, dict: dict, merge: bool = True
+    ) -> None:
+        try:
+            if path is None:
+                raise ConfigError("Trying to dump to None path.")
+            path.validate(action="w")
+            path.write_json(dict, merge=merge)
+            logger().success(f"Config file '{path}' written.", verbose_only=True)
+        except AppPath.AppPathError as e:
+            logger().error(f"{e}", verbose_only=True)
+
     def _update(
         self,
         trust: Literal["file", "dict"] = "file",
@@ -111,8 +97,8 @@ class Config:
         )
 
         # Load both global and specific config files
-        global_config_file_dict = _read_config_from_file(_global_config_file_path)
-        specific_config_file_dict = _read_config_from_file(self._config_file)
+        global_config_file_dict = self._safe_read_json(_merged_config_fpath)
+        specific_config_file_dict = self._safe_read_json(self._config_fpath)
 
         # Create the nested structure for merging
         update_config_dict = utilities.nest_dict(update_config_dict, self._key)
@@ -191,7 +177,7 @@ class Config:
             f">>> UPDATED {self._key} CONFIG\n",
             {
                 "trust": trust,
-                "config_file": self._config_file,
+                "config_file": self._config_fpath,
                 "nested": self.nested,
                 "update_config_dict": update_config_dict,
                 "specific_config_dict": specific_config_dict,
@@ -206,15 +192,17 @@ class Config:
         )
         logger().debug(f"<<< UPDATED {self._key} CONFIG", verbose_only=True)
 
-    def specify_file_path(self, new_path: str | Path = "", reload: bool = True) -> None:
-        if new_path == "":
-            self._config_file = (
-                None
-                if self.nested
-                else _config_file_path(re.sub(r"[._]", "-", self._key.strip()))
+    def specify_file_path(
+        self, new_path: str | AppPath.AppPath = None, reload: bool = True
+    ) -> None:
+        if not new_path:
+            self._config_fpath = (
+                None if self.nested else _specific_config_fpath(self._key)
             )
         else:
-            self._config_file = Path.cwd() / new_path
+            self._config_fpath = (
+                AppPath.fpath(new_path) if isinstance(new_path, str) else new_path
+            )
         if reload:
             self.reload()
 
@@ -230,9 +218,9 @@ class Config:
             )
         else:
             self.nested = module.get_config_key()
-            self.specify_file_path(get(self.nested)._config_file)
+            self.specify_file_path(get(self.nested)._config_fpath)
             logger().debug(
-                f"Module config for '{self._key}' loaded from '{self._config_file}'.",
+                f"Module config for '{self._key}' loaded from '{self._config_fpath}'.",
                 verbose_only=True,
             )
 
@@ -250,9 +238,6 @@ class Config:
             utilities.dict_path(self._merged_config_dict, key, default=default)
         )
 
-    def get_path(self, key: str) -> Path:
-        return Path(Path.cwd() / self.get(f"paths.{key}", ""))
-
     def print(self, output: lambda *args, **kwargs: None = None) -> None:
         if output is None:
             output = logger().print
@@ -260,7 +245,7 @@ class Config:
             {
                 self._key: {
                     "nested": self.nested,
-                    "config_file": self._config_file,
+                    "config_file": self._config_fpath,
                     "specific": self._specific_config_dict,
                     "merged": self._merged_config_dict,
                 }
@@ -271,9 +256,7 @@ class Config:
         """Dump the current configuration to a file."""
 
         # Determine dump file path
-        dump_file = (
-            _global_config_file_path if target == "global" else self._config_file
-        )
+        dump_file = _merged_config_fpath if target == "global" else self._config_fpath
 
         # Check dump file path
         if dump_file is None:
@@ -285,7 +268,7 @@ class Config:
             dump_dict = utilities.nest_dict(dump_dict, self._key)
 
         # Dump to file
-        _dump_dict_to_file(dump_file, dump_dict)
+        self._safe_write_json(dump_file, dump_dict)
 
         # Update parent config RAM if nested
         if isinstance(self.nested, str):

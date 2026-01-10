@@ -20,6 +20,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Callable, Tuple, Literal
 from tkinter import Tk, filedialog
+from src import AppPath
 
 
 def logger() -> Logger.Logger:
@@ -73,9 +74,12 @@ class CliArgumentError(CliError):
                 f"Please provide only one value for {self.argument.long}: "
             )
         elif self.type == "unexpected_value":
-            self.argument.clean_invalid_values()  # FIXME: maybe use reset instead, see with usage what fits better
+            raw_values = self.argument._raw_values
+            unexpected_values = self.argument._invalid_raw_values()
+            decorate = lambda v: f"/;cr/{v}/;"  # decorate unexpected values
+            self.argument.reset()  # FIXME: maybe use reset instead, see with usage what fits better
             self.argument.prompt_for_value(
-                f"{self.argument._raw_values} Please provide valid value(s) for argument {self.argument.long} (accepted: {self.argument.accepted_values}): "
+                f"Unexpected value(s) in [{", ".join(decorate(v) if v in unexpected_values else v for v in raw_values)}] for argument {self.argument.long} (accepted: {self.argument.accepted_values}): "
             )
         elif self.type.startswith("not_a_file"):
             self.argument.reset()
@@ -87,14 +91,6 @@ class CliArgumentError(CliError):
             return self.argument.prompt_for_value(
                 f"Please provide valid directory(ies) path(s) for argument {self.argument.long}: "
             )
-
-
-class CliFile(Path):
-    pass
-
-
-class CliDir(Path):
-    pass
 
 
 class CliArgument:
@@ -109,7 +105,7 @@ class CliArgument:
         expect: Literal["one", "many"] = "one",
         type: Callable[[str], any] | None = None,
         required: bool = False,
-        accepted_values: list[str] | None = None,
+        accepted_values: list[str] | str = None,
     ):
         if long in ["--values"]:
             raise CliError("You don't want to name an argument '--values'")
@@ -134,6 +130,10 @@ class CliArgument:
                 self.accepted_values.extend(v.lower() for v in [*self.accepted_values])
             if self.default is None:
                 self.default = False
+        # prepare AppPath type handling
+        if self.type == AppPath.AppPath:
+            if not self.accepted_values:
+                self.accepted_values = AppPath.app_path_pattern
         # wrap default values in array if needed
         if not isinstance(self.default, list) and self.default is not None:
             self.default = [self.default]
@@ -145,11 +145,12 @@ class CliArgument:
         return self.__dict__
 
     def _invalid_raw_values(self) -> list[str]:
-        return (
-            [v for v in self._raw_values if v not in self.accepted_values]
-            if self.accepted_values
-            else []
-        )
+        if isinstance(self.accepted_values, list):
+            return [v for v in self._raw_values if v not in self.accepted_values]
+        elif isinstance(self.accepted_values, str):
+            pattern = re.compile(self.accepted_values)
+            return [v for v in self._raw_values if not pattern.match(v)]
+        return []
 
     def read_raw_from_config(self) -> None:
         config_value = self._parser._module._config.get(self.long)
@@ -193,14 +194,14 @@ class CliArgument:
                 raise CliArgumentError(self, "missing_value")
             elif len(self._invalid_raw_values()) > 0:
                 raise CliArgumentError(self, "unexpected_value")
-            elif self.type == CliFile:
-                file_path = CliFile(Path.cwd() / self._raw_values[0])
-                if not file_path.is_file():
-                    raise CliArgumentError(self, f"not_a_file: {file_path.absolute()}")
-            elif self.type == CliDir:
-                dir_path = CliDir(Path.cwd() / self._raw_values[0])
-                if not dir_path.is_dir():
-                    raise CliArgumentError(self, f"not_a_dir: {dir_path.absolute()}")
+            # elif self.type == CliFile:
+            #     file_path = CliFile(Path.cwd() / self._raw_values[0])
+            #     if not file_path.is_file():
+            #         raise CliArgumentError(self, f"not_a_file: {file_path.absolute()}")
+            # elif self.type == CliDir:
+            #     dir_path = CliDir(Path.cwd() / self._raw_values[0])
+            #     if not dir_path.is_dir():
+            #         raise CliArgumentError(self, f"not_a_dir: {dir_path.absolute()}")
 
     def _parse_bool_value(self, value: str) -> bool:
         if value.lower() in ["y", "yes", "true"]:
@@ -256,20 +257,20 @@ class CliArgument:
             return f"'{s}'" if s else None
 
         if self.expect == "one":
-            if self.type == CliFile:
+            if self.type == AppPath.fpath:
                 filepath = sanitize(
                     filedialog.askopenfilename(title=f"{title} (single file)")
                 )
-            else:
+            if self.type == AppPath.dpath:
                 filepath = sanitize(
                     filedialog.askdirectory(title=f"{title} (single directory)")
                 )
         else:
-            if self.type == CliFile:
+            if self.type == AppPath.fpath:
                 filepaths = filedialog.askopenfilenames(
                     title=f"{title} (multiple files)"
                 )
-            elif self.type == CliDir:
+            elif self.type == AppPath.dpath:
                 filepaths = []
                 loop = 0
                 while one_file_path := filedialog.askdirectory(
@@ -293,26 +294,26 @@ class CliArgument:
 
         logger().prompt(f"{message}", end="")
 
-        if self.type in [CliFile, CliDir] and self._parser._module._config.get(
-            "cli.gui_file_dialogs", False
-        ):
+        if self.type in [
+            AppPath.fpath,
+            AppPath.dpath,
+        ] and self._parser._module._config.get("cli.gui_file_dialogs", False):
             input_value = self._select_file_gui(title=message)
         else:
             input_value = input().strip()
         if input_value == "":
             input_value = self.default
         logger().clean_lines(1)
-        logger().prompt(f"{message}", end="", instant=True)
+        logger().prompt(f"{message}", end="", animate=False)
 
         if input_value is None or (
             self.type == bool and not self._parse_bool_value(input_value)
         ):
-            logger().error(f"{input_value}", instant=True)
+            logger().error(f"{input_value}", animate=False)
         elif input_value == "":
-            logger().print(f"/;cw;di/(empty)/;", instant=True)
+            logger().print(f"/;cw;di/(empty)/;", animate=False)
         else:
-            logger().success(f"{input_value}", instant=True)
-
+            logger().success(f"{input_value}", animate=False)
         return input_value
 
     def prompt_for_value(self, message) -> None:
@@ -321,7 +322,10 @@ class CliArgument:
             if raw_value:
                 import shlex
 
-                self.store_raw_values(shlex.split(raw_value))
+                if self.expect == "one":
+                    self.store_raw_values([raw_value])
+                else:
+                    self.store_raw_values(shlex.split(raw_value))
             elif not self.required:
                 self.reset()
             self._validate(read_config=False)
@@ -416,11 +420,18 @@ class CliArgumentParser:
             else:
                 self._short_cli_args_mapping[argument.short] = argument.long
 
-    def get_arg(self, flag: str) -> any:
-        """Get argument by long form."""
-        return self._get_arg(flag)
+    def get_arg(self, flag: str, provide=False) -> any:
+        arg = self._get_arg(flag)
+        if not arg.provided and provide:
+            try:
+                arg.store_raw_values([])
+                arg._validate()
+                arg._parse_final_values()
+            except CliArgumentError as e:
+                e.solve()
+        return arg._get_value()
 
-    def _get_arg(self, flag: str) -> any:
+    def _get_arg(self, flag: str) -> CliArgument:
         """Get argument by long form."""
         if not flag.startswith("--"):
             raise CliError(
@@ -428,7 +439,7 @@ class CliArgumentParser:
             )
         elif not flag in self._cli_args:
             raise CliError(f"Unknown flag {flag}.")
-        return self._cli_args[flag]._get_value()
+        return self._cli_args[flag]
 
     def parse_args(self, args: list[str] = []) -> None:
         errors = self._parse_args(args)
@@ -544,11 +555,11 @@ class CliModule:
             raise CliError("Parser not initialized yet.")
         self._parser.add_args(*arguments)
 
-    def get_arg(self, flag: str) -> any:
+    def get_arg(self, flag: str, provide=False) -> any:
         """Get argument value by long flag."""
         if self._parser is None:
             raise CliError("Parser not initialized yet.")
-        return self._parser.get_arg(flag)
+        return self._parser.get_arg(flag, provide=provide)
 
     def prepare(self) -> None:
         """
