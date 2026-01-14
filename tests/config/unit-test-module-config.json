@@ -1,13 +1,17 @@
 {
     "cli": {
-        "gui_file_dialogs": true
+        "gui_file_dialogss": true
     },
     "loggers": {
         "config": {
             "verbose": false
         },
         "default": {
-            "animate": false
+            "flush_rate": [
+                0,
+                5
+            ],
+            "animate": true
         },
         "unit-test": {
             "data_print": {
@@ -15,5 +19,6 @@
             },
             "debug": {}
         }
-    }
+    },
+    "--prompt": "level:prompt:Hello world!"
 }

@@ -58,6 +58,8 @@ class Config:
         logger().success(f"Config '{self._key}' initialized.", verbose_only=True)
 
     def _safe_read_json(self, path: AppPath.AppPath) -> dict:
+        from src import Logger
+
         try:
             if path is None:
                 return {}
@@ -66,12 +68,15 @@ class Config:
             logger().success(f"Config file '{path}' read.", verbose_only=True)
             return data
         except AppPath.AppPathError as e:
-            logger().error(f"{e}", verbose_only=True)
+            logger().error(f"{e}", path, verbose_only=True)
+            Logger.traceback(e, verbose_only=True)
             return {}
 
     def _safe_write_json(
         self, path: AppPath.AppPath, dict: dict, merge: bool = True
     ) -> None:
+        from src import Logger
+
         try:
             if path is None:
                 raise ConfigError("Trying to dump to None path.")
@@ -79,7 +84,8 @@ class Config:
             path.write_json(dict, merge=merge)
             logger().success(f"Config file '{path}' written.", verbose_only=True)
         except AppPath.AppPathError as e:
-            logger().error(f"{e}", verbose_only=True)
+            logger().error(f"{e}", path, verbose_only=True)
+            Logger.traceback(e, verbose_only=True)
 
     def _update(
         self,
@@ -96,8 +102,8 @@ class Config:
             else copy.deepcopy(self._specific_config_dict)
         )
 
-        # Load both global and specific config files
-        global_config_file_dict = self._safe_read_json(_merged_config_fpath)
+        # Load both merged and specific config files
+        merged_config_file_dict = self._safe_read_json(_merged_config_fpath)
         specific_config_file_dict = self._safe_read_json(self._config_fpath)
 
         # Create the nested structure for merging
@@ -117,25 +123,25 @@ class Config:
             )
 
         # If nested and specified, extract also the nested dict from its parent dict, and re-nest
-        nested_global_config_file_dict = {}
+        nested_merged_config_file_dict = {}
         if isinstance(self.nested, str):
-            nested_global_config_file_dict = utilities.nest_dict(
+            nested_merged_config_file_dict = utilities.nest_dict(
                 utilities.dict_path(
-                    global_config_file_dict, f"{self.nested}.{self._key}", default={}
+                    merged_config_file_dict, f"{self.nested}.{self._key}", default={}
                 ),
                 self._key,
             )
 
-        # Extract only the relevant sub-dict from global config file keeping nesting
-        global_config_file_dict = utilities.nest_dict(
-            utilities.dict_path(global_config_file_dict, self._key, default={}),
+        # Extract only the relevant sub-dict from merged config file keeping nesting
+        merged_config_file_dict = utilities.nest_dict(
+            utilities.dict_path(merged_config_file_dict, self._key, default={}),
             self._key,
         )
 
-        # Get a merged version of global and specific dicts from files
+        # Get a merged version of merged and specific dicts from files
         merged_config_file_dict = utilities.deep_merge_dicts(
-            copy.deepcopy(global_config_file_dict),
-            copy.deepcopy(nested_global_config_file_dict),
+            copy.deepcopy(merged_config_file_dict),
+            copy.deepcopy(nested_merged_config_file_dict),
             copy.deepcopy(specific_config_file_dict),
         )
 
@@ -182,8 +188,8 @@ class Config:
                 "update_config_dict": update_config_dict,
                 "specific_config_dict": specific_config_dict,
                 "specific_config_file_dict": specific_config_file_dict,
-                "nested_global_config_file_dict": nested_global_config_file_dict,
-                "global_config_file_dict": global_config_file_dict,
+                "nested_merged_config_file_dict": nested_merged_config_file_dict,
+                "merged_config_file_dict": merged_config_file_dict,
                 "merged_config_file_dict": merged_config_file_dict,
                 "self.specific_config": self._specific_config_dict,
                 "self.merged_config": self._merged_config_dict,
@@ -252,11 +258,11 @@ class Config:
             },
         )
 
-    def dump(self, target: Literal["specific", "global"] = "specific") -> None:
+    def dump(self, target: Literal["specific", "merged"] = "specific") -> None:
         """Dump the current configuration to a file."""
 
         # Determine dump file path
-        dump_file = _merged_config_fpath if target == "global" else self._config_fpath
+        dump_file = _merged_config_fpath if target == "merged" else self._config_fpath
 
         # Check dump file path
         if dump_file is None:
@@ -264,8 +270,12 @@ class Config:
 
         # Prepare dump dict
         dump_dict = self._specific_config_dict
-        if target == "global" or self.nested:
-            dump_dict = utilities.nest_dict(dump_dict, self._key)
+        if target == "merged" or self.nested:
+            dump_dict = utilities.nest_dict(
+                # Use merged dict when dumping to merged.
+                dump_dict if not target == "merged" else self._merged_config_dict,
+                self._key,
+            )
 
         # Dump to file
         self._safe_write_json(dump_file, dump_dict)
@@ -294,7 +304,7 @@ class Config:
         return copy.deepcopy(self._specific_config_dict)
 
 
-def dump(*keys: str, target: Literal["specific", "global"] = "specific") -> None:
+def dump(*keys: str, target: Literal["specific", "merged"] = "specific") -> None:
     from src import _configs
 
     if not keys:
@@ -345,7 +355,7 @@ class ConfigModule(Cli.CliModule):
                 expect="many",
             ),
             Cli.CliArgument(
-                "--global",
+                "--merged",
                 short="-g",
                 expect="many",
                 accepted_values=["print", "dump", "merge"],
@@ -355,7 +365,7 @@ class ConfigModule(Cli.CliModule):
             Cli.CliArgument("--dump", short="-d", type=bool),
             Cli.CliArgument("--merge", short="-m", type=bool),
             Cli.CliArgument("--reload", short="-r", accepted_values=["file", "dict"]),
-            Cli.CliArgument("--global", short="-g", type=bool),
+            Cli.CliArgument("--merged", short="-g", type=bool),
         )
 
     def run(self) -> int | None:

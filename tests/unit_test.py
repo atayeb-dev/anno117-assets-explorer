@@ -1,6 +1,5 @@
-import json
 from pathlib import Path
-import sys
+import re
 from typing import cast
 
 from src import Logger, Config, Cli, AppPath
@@ -39,6 +38,15 @@ class UnitTest(Cli.CliModule):
             shutil.rmtree(path)
         path.mkdir(parents=True, exist_ok=True)
 
+        pattern = r"^level:(.*):(.*)$"
+
+        def prompt(str: str) -> str:
+            matches = re.match(pattern, str).groups()
+            return {
+                "level": matches[0],
+                "message": matches[1],
+            }
+
         """Register unit test arguments."""
         self.add_args(
             Cli.CliArgument(
@@ -49,9 +57,7 @@ class UnitTest(Cli.CliModule):
                 accepted_values=["prompt", "config", "data-print", "kraken"],
             ),
             Cli.CliArgument(
-                "--prompt",
-                expect="many",
-                type=AppPath.AppPath,
+                "--prompt", expect="one", type=prompt, accepted_values=pattern
             ),
             Cli.CliArgument("--test-data", type=AppPath.fpath, expect="many"),
             Cli.CliArgument("--test-data-dir", type=AppPath.dpath, expect="many"),
@@ -67,17 +73,16 @@ class UnitTest(Cli.CliModule):
         modes = self.get_arg("--modes")
         Logger.get().print("Running UnitTest module with modes: ", modes)
         if "prompt" in modes:
-            while prompt := self.get_arg("--prompt", provide=True):
-                self._parser._get_arg("--prompt").reset()
-                self._unit_test_logger.prompt(prompt)
-
-            # Simple prompt tests
-            self._unit_test_logger.error("This is a test error message.")
-            self._unit_test_logger.success("This is a test success message.")
-            self._unit_test_logger.prompt("This is a test prompt message.")
-            self._unit_test_logger.debug("This is a test debug message.")
+            while prompt := self.get_arg("--prompt"):
+                self._parser.reset_arg("--prompt")
+                try:
+                    # Simple prompt tests
+                    self._unit_test_logger.__getattribute__(prompt["level"])(
+                        f"this is a test {prompt['level']} message: {prompt['message']}"
+                    )
+                except Exception as e:
+                    self._unit_test_logger.error(f"Uknown level {prompt[0]}")
         if "config" in modes:
-
             # Manipulate  config
             unit_test_config = self._config
             unit_test_logger_config = self._unit_test_logger.get_config()

@@ -1,26 +1,32 @@
 {
     "loggers": {
         "default": {
-            "animate": true
+            "animate": true,
+            "debug": {
+                "print_indent_chars": false
+            }
         },
         "config": {
             "verbose": false
         },
         "cli": {
+            "verbose": false,
             "animate": true,
-            "verbose": false
+            "data_print": {
+                "styles": {
+                    "str": "cc;di"
+                }
+            }
         },
         "traceback": {
             "animate": false,
             "data_print": {
-                "objk": "cr",
-                "str": "cm",
                 "styles": {
                     "objk": "cr",
                     "str": "cm"
                 }
             },
-            "verbose": true
+            "verbose": false
         }
     },
     "unit_test_module": {

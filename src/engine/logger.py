@@ -56,6 +56,9 @@ _specials = {
 }
 _s_keys_matches = dict([(key.split("/")[0], val) for key, val in _specials.items()])
 _ansi_text = lambda codes: f"\x1b[{';'.join(str(c) for c in codes)}m"
+_ansi_tag_text = (
+    lambda tag: f"\x1b[{';'.join(str(c) for c in [_ANSI_CODES[t][0] for t in tag.split(';')])}m"
+)
 
 
 def _detect_ansi_pattern(string: str) -> Tuple[str, str]:
@@ -208,6 +211,7 @@ class DataPrinter:
         logger.write(
             dl,
             ansi=False,
+            animate=False,
             data_print={
                 "force_inline": True,
                 "compact": self._logger._kwargs.get("data_print.compact"),
@@ -218,7 +222,6 @@ class DataPrinter:
         max_inline = self._logger._kwargs.get("data_print.max_inline")
         remaining = max_inline - len(self._logger._indents[-1])
         to_write = len(cast(StringIO, logger._stream).getvalue())
-        # print(f"[{to_write}/{remaining}]", end="")
         if to_write > remaining:
             return False
         return True
@@ -366,6 +369,7 @@ class Logger:
         self._current_path: list[str | int] = ["root"]
         self._config = None
         self._kwargs: LoggerKwargs = None
+        self._new_lines = 0
 
     def get_config_key(self) -> str:
         return f"loggers.{self._name}"
@@ -397,9 +401,10 @@ class Logger:
             raise RuntimeError("Logger config not loaded yet.")
         return self._config
 
-    def write(self, *args, **kwargs) -> None:
+    def write(self, *args, **kwargs) -> int:
         try:
             def_stream = None
+            self._new_lines = 0
             self._kwargs = LoggerKwargs(self, **kwargs)
             self._indents = [""]
             self._current_path = ["root"]
@@ -425,38 +430,45 @@ class Logger:
             if def_stream is not None:
                 self._stream = def_stream
 
-    def print(self, *args, **kwargs) -> None:
+        new_lines = self._new_lines
+        self._new_lines = 0
+        return new_lines
+
+    def print(self, *args, **kwargs) -> int:
         if "end" not in kwargs:
             args = [*args, "\n"]
         else:
             args = [*args, kwargs["end"]]
             del kwargs["end"]
-        self.write(*args, **kwargs)
+        return self.write(*args, **kwargs)
 
-    def error(self, *args, **kwargs) -> None:
+    def error(self, *args, **kwargs) -> int:
         args = [f"/;_cross/cr;/ ", *args]
-        self.print(*args, **kwargs)
+        return self.print(*args, **kwargs)
 
-    def critical(self, *args, **kwargs) -> None:
+    def critical(self, *args, **kwargs) -> int:
         args = [f"/;cr;bo//;_cross/;/ ", *args, "/;"]
-        self.print(*args, **kwargs)
+        return self.print(*args, **kwargs)
 
-    def success(self, *args, **kwargs) -> None:
+    def success(self, *args, **kwargs) -> int:
         args = [f"/;_check/cg;/ ", *args]
-        self.print(*args, **kwargs)
+        return self.print(*args, **kwargs)
 
-    def prompt(self, *args, **kwargs) -> None:
+    def prompt(self, *args, **kwargs) -> int:
         args = [f"/;_arrow/cb;bo;/ ", *args]
-        self.print(*args, **kwargs)
+        return self.print(*args, **kwargs)
 
-    def debug(self, *args, **kwargs) -> None:
+    def debug(self, *args, **kwargs) -> int:
         args = [f"/;cm;bo//;_wrench/;/ ", *args, "/;"]
-        self.print(*args, **kwargs)
+        return self.print(*args, **kwargs)
 
-    def clean_lines(self, lines: int = 1):
+    def clean_lines(self, lines: int):
         while lines > 0:
             lines -= 1
             self._stream.write("\x1b[F\x1b[K")
+        self._indents = [""]
+        self._indents_buffer.seek(0)
+        self._indents_buffer.truncate(0)
         self._stream.flush()
 
     def _indent(self) -> None:
@@ -471,11 +483,18 @@ class Logger:
 
     def _new_line(self, indent_char=" ") -> None:
         self._stream.write("\n")
+        self._new_lines += 1
         indents_char = self._indents[-1]
 
         if len(self._indents) > 1:
             if self._kwargs.get("debug.print_indent_chars"):
-                self._stream.write(indents_char)
+                self._stream.write(
+                    _ansi_tag_text("cm;di")
+                    + self._name
+                    + ":"
+                    + indents_char[len(self._name) + 1 :]
+                    + _ansi_tag_text("r")
+                )
             else:
                 self._stream.write(indent_char * len(indents_char))
         elif len(self._indents[0]) > 0:
@@ -587,14 +606,16 @@ def critical(message: str = "", ex: Exception = None, print_stack=True) -> str:
         traceback(ex)
 
 
-def traceback(ex: Exception) -> str:
+def traceback(ex: Exception, **kwargs) -> str:
     import traceback
 
     logger = get("traceback", fallback=True)
     for frame in traceback.extract_tb(ex.__traceback__)[::-1]:
         logger.debug(
             {frame.name: f"{frame.filename}:{frame.lineno}"},
+            animate=False,
             data_print={"force_inline": True},
+            **kwargs,
         )
 
 

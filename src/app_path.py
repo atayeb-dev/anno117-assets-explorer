@@ -24,9 +24,11 @@ class AppPathError(Exception):
         message: str,
         path: AppPath | None = None,
         type: Literal["not_found", "wrong_type", "uncaught"] = "uncaught",
+        cause: Exception | None = None,
     ):
         self.path = path
         self.type = type
+        self.cause = cause
         super().__init__(message)
 
 
@@ -50,7 +52,10 @@ class AppPath:
             self.path = self.path.resolve()
 
     def to_dict(self) -> dict:
-        return {"type": self.type, "path": self.path}
+        return {
+            "type": self.type,
+            "path": self.path,
+        }
 
     def __str__(self):
         return f"{self.type}:{self.path}"
@@ -71,28 +76,33 @@ class AppPath:
                 read_dict = json.load(f)
             return read_dict
         except Exception as e:
-            raise AppPathError(f"{e}", path=self, type="uncaught")
+            raise AppPathError(
+                f"{type(e).__name__}: {e}", path=self, type="uncaught", cause=e
+            )
 
     def write_json(self, dict: dict, merge: bool = True) -> None:
+
+        write_dict = dict
         if merge:
-            write_dict = utilities.deep_merge_dicts(self.read_json(), dict)
-        else:
-            write_dict = dict
+            try:
+                # Overwrite if read fails
+                write_dict = utilities.deep_merge_dicts(self.read_json(), write_dict)
+            except AppPathError as e:
+                pass
 
         try:
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(write_dict, f, indent=4)
         except Exception as e:
-            raise AppPathError(f"{e}", path=self, type="uncaught")
+            raise AppPathError(
+                f"{type(e).__name__}: {e}", path=self, type="uncaught", cause=e
+            )
 
     def validate(
         self,
         action: Literal["r", "w"] = "r",
         allow_create: bool = True,
     ) -> Path:
-        if self.path is None:
-            raise AppPathError("Path is None", path=self, type="not_found")
-
         if self.path.exists():
             if self.type == "file" and not self.path.is_file():
                 raise AppPathError(

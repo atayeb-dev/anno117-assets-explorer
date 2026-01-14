@@ -51,12 +51,14 @@ def init_engine(verbose: bool = False) -> None:
             config_dict=logger["dict"],
         )
 
+    _loggers["traceback"].get_config().print()
+
     # Reload the default logger from its the config file.
     _loggers["default"].reload_config()
 
-    # Dump all loggers config to global config file.
+    # Dump all loggers config to merged config file.
     for logger in _loggers.values():
-        logger.get_config().dump(target="global")
+        logger.get_config().dump(target="merged")
 
 
 # Exports
