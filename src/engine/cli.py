@@ -62,18 +62,38 @@ class CliArgumentRequest(CliError):
         prompter.prompts = [f"{self}"]
 
     def prepare_end_prompter(self, prompter: CLiPrompter) -> None:
-        pass
+        prompter.type = "success"
+        prompter.prompts = [
+            self.argument_name,
+            " Provided value: ",
+            self.argument._get_value(),
+        ]
 
     def solve(self, prompter: CLiPrompter) -> any:
         if self.argument._parser._module.get_arg("--silent"):
             raise CliError(f"Silent failure: {self}")
         self.argument._reset()
-        return prompter.request_value(self)
+        prompter.use_request(self)
+        return prompter.request_value()
 
 
 class CliMissingRequest(CliArgumentRequest):
     def __init__(self, argument: CliArgument):
         super().__init__(argument)
+
+    def prepare_prompter(self, prompter: CLiPrompter) -> None:
+        prompter.type = "error"
+        prompter.allow_default = False
+        accepted_values = self.argument.accepted_values
+        if isinstance(accepted_values, str):
+            accepted_values = f"/;cm/{accepted_values}/;"
+        prompter.prompts = [
+            self.argument_name,
+            " Missing value(s) ",
+            ". Accepted: ",
+            accepted_values,
+            ": ",
+        ]
 
 
 class CliInvalidRequest(CliArgumentRequest):
@@ -97,19 +117,13 @@ class CliInvalidRequest(CliArgumentRequest):
             ": ",
         ]
 
-    def prepare_end_prompter(self, prompter: CLiPrompter) -> None:
-        prompter.prompts = [
-            *prompter.prompts,
-            self.argument._get_value(),
-        ]
-
 
 class CliConfirmRequest(CliArgumentRequest):
     def __init__(self, argument: CliArgument):
         super().__init__(argument)
 
     def prepare_prompter(self, prompter: CLiPrompter) -> None:
-        prompter.type = "confirm"
+        prompter.type = "prompt"
         prompter.allow_default = True
         prompter.prompts = [
             self.argument_name,
@@ -119,36 +133,44 @@ class CliConfirmRequest(CliArgumentRequest):
         ]
 
     def prepare_end_prompter(self, prompter: CLiPrompter) -> None:
+        prompter.type = "success"
         if not self.argument.use_default:
             prompter.prompts = [
-                *prompter.prompts,
+                self.argument_name,
+                " Overridden by:  ",
                 self.argument._get_value(),
             ]
         else:
-            prompter.type = "success"
-            prompter.prompts = [*prompter.prompts[:-1]]
+            prompter.prompts = [
+                self.argument_name,
+                " Using default:  ",
+                self.argument._get_value(),
+            ]
+
+    def solve(self, prompter):
+        if self.argument._parser._module.get_arg("--auto-confirm"):
+            prompter.use_request(self)
+            self.argument.use_default = True
+            return prompter.end_request()
+        else:
+            return super().solve(prompter)
 
 
 class CLiPrompter:
 
     def __init__(
         self,
-        allow_defaults: bool,
     ):
         self.requests = 0
         self.type: Literal[
-            "request",
-            "solve",
             "error",
             "success",
-            "default",
-        ] = "request"
-        self.basetype: Literal[
-            "request",
-            "solve",
-        ] = "request"
+            "prompt",
+        ] = "prompt"
         self.prompts: list[any] = []
-        self.allow_default = allow_defaults
+        self.allow_default: bool = False
+        self.request: CliArgumentRequest = None
+        self.argument: CliArgument = None
 
     def _select_file_gui(self, title: str) -> str:
         root = Tk()
@@ -200,36 +222,36 @@ class CLiPrompter:
         logger().print()  # New line after GUI dialog
         return filepath
 
-    def end_request(self, value=any) -> None:
+    def use_request(self, request: CliArgumentRequest) -> None:
+        self.request = request
+        self.argument = request.argument
 
-        self.request.prepare_end_prompter(self)
-        # prefix = f""
-        # if value is None or value is False or self.type == "error":
-        #     prefix = f"/;_cross/cr;/ "
-        # else:
-        #     prefix = f"/;_check/cg;/ "
+    def prompt(self, end: str = "\n") -> any:
         if self.type in ["success"]:
             method = "success"
         elif self.type in ["error"]:
             method = "error"
         else:
             method = "prompt"
-        logger().__getattribute__(method)(*self.build_prompt(), animate=False)
+        logger().__getattribute__(method)(*self.build_prompt(), end=end)
 
     def build_prompt(self) -> list[any]:
 
         prompt_parts: list[any] = copy.deepcopy(self.prompts)
-        if self.type == "confirm":
-            prompt_parts[0] = f"/;cc/{prompt_parts[0]}/;"
+        if self.type == "prompt":
+            prompt_parts[0] = f"/;cb/{prompt_parts[0]}/;"
         elif self.type == "error":
             prompt_parts[0] = f"/;cr/{prompt_parts[0]}/;"
         elif self.type == "success":
             prompt_parts[0] = f"/;cg/{prompt_parts[0]}/;"
-        elif self.type == "default":
-            prompt_parts[0] = f"/;cy/{prompt_parts[0]}/;"
         return prompt_parts
 
-    def request_value(self, request: CliArgumentRequest) -> any:
+    def end_request(self) -> any:
+        self.request.prepare_end_prompter(self)
+        self.prompt()
+        return self.argument._get_value()
+
+    def request_value(self) -> any:
         input_value: str | any = ""
         self.requests += 1
         if self.requests > 3:
@@ -240,11 +262,9 @@ class CLiPrompter:
                 "You are doing it wrong"
             )  # Too many failed attempts, raise help for user.
 
-        request.prepare_prompter(self)
-        lines = logger().prompt(*self.build_prompt(), end="") + 1
+        self.request.prepare_prompter(self)
+        self.prompt(end="")
 
-        self.request = request
-        self.argument = request.argument
         if self.argument.type == AppPath.AppPath:
             raise CliError(
                 "AppPath not supported. Provide AppPath.fpath or AppPath.dpath, instead."
@@ -256,33 +276,26 @@ class CLiPrompter:
                 )
 
         if not input_value:
-            input_value = input().strip()
+            try:
+                input_value = input().strip()
+            except EOFError as e:
+                input_value = None if self.argument.use_default else ""
 
-        # Print and clean after input to reset the logger indents.
-        logger().print()
-        logger().clean_lines(1)
-
+        # Fallback to default if allowed
         if self.allow_default and not input_value:
-            self.argument.use_default = True
-            self.type = "default"
-            logger().clean_lines(lines)
-            self.end_request(value=self.argument._get_value())
-            return self.argument._get_value()
+            if input_value is not None:
+                self.argument.use_default = True
+                return self.end_request()
+            else:
+                input_value = ""
+
         try:
             raw_values = self.argument._parse_raw_input(input_value)
             self.argument._validate_raw_values(raw_values)
         except CliArgumentRequest as e:
-            # Need print + clean to avoid double prompt lines
-            logger().print()
-            logger().clean_lines(1)
-            self.type = "error"
-            logger().clean_lines(lines)
-            self.end_request(value=raw_values)
             return e.solve(prompter=self)
 
-        self.type = "success"
-        self.end_request(value=self.argument._get_value())
-        return self.argument._get_value()
+        return self.end_request()
 
 
 class CliArgument:
@@ -299,8 +312,7 @@ class CliArgument:
         required: bool = False,
         accepted_values: list[str] | str = None,
     ):
-        if long in ["--values"]:
-            raise CliError("You don't want to name an argument '--values'")
+
         self.long = long
         self.short = short
         self.default = default
@@ -310,9 +322,7 @@ class CliArgument:
         self.accepted_values = accepted_values
         self.values: list[any] = []
         self.use_default: bool = False
-        self.provided: bool = False
-        self.config_default: bool = False
-        self.parsed_from_flags: bool = False
+        self.config_default: any = None
 
     def _finalize(self):
         # Read any value from config to override default
@@ -321,10 +331,9 @@ class CliArgument:
             logger().debug(
                 f"Setting argument {self.long} default from config: ",
                 config_value,
-                verbose_only=False,
+                verbose_only=True,
             )
-            self.config_default = True
-            self.default = config_value
+            self.config_default = config_value
         # prepare bool type handling
         if self.type == bool:
             if not self.accepted_values:
@@ -332,13 +341,20 @@ class CliArgument:
                 self.accepted_values.extend(v.lower() for v in [*self.accepted_values])
             if self.default is None:
                 self.default = False
-        # prepare AppPath type handling
-        if self.type in [AppPath.fpath, AppPath.dpath]:
-            if not self.accepted_values:
-                self.accepted_values = AppPath.app_path_pattern
         # Check Path type
         if self.type == Path:
             raise CliError("Use AppPath for Path type arguments.")
+
+        # Check default value coherence
+        if self.default is not None:
+            if not isinstance(self.default, list) and self.expect == "many":
+                raise CliError(
+                    "Default value must be a list for 'many' expected arguments."
+                )
+            elif isinstance(self.default, list) and self.expect == "one":
+                raise CliError(
+                    "Default value must not be a list for 'one' expected arguments."
+                )
 
     def to_dict(self) -> dict:
         return self.__dict__
@@ -380,12 +396,11 @@ class CliArgument:
                 raw_values.append("y")
             # check for required flag without value
             elif self.required and self.default is None:
-                raise CliMissingRequest(self, raw_values)
+                raise CliMissingRequest(self)
         elif len(self._invalid_raw_values(raw_values)) > 0:
             raise CliInvalidRequest(self, raw_values)
         values = [self._parse_raw_value(v) for v in raw_values]
         if store:
-            self.provided = True
             self.values = values
         return copy.deepcopy(values)
 
@@ -429,12 +444,14 @@ class CliArgument:
 
     def _reset(self) -> None:
         self.values = []
-        self.provided = False
         self.use_default = False
 
     def _get_value(self) -> any | None:
         if self.use_default:
             # Assume default is genuine.
+            # Config default preceeds normal default
+            if self.config_default is not None:
+                return self.config_default
             return self.default
         return (
             None
@@ -456,49 +473,73 @@ class CliArgumentParser:
                 "--print-args",
                 short="-p",
                 expect="many",
-                accepted_values=["all", "provided", "full"],
+                accepted_values=["config", "provided", "all"],
                 type=str,
-                default="provided",
             ),
+            CliArgument("--blank", short="-b", type=bool),
+            CliArgument("--auto-confirm", short="-a", type=bool),
             CliArgument("--help", short="-h", type=bool),
             CliArgument("--silent", short="-s", type=bool),
-            CliArgument("--confirm", short="-c", type=bool),
         )
         self._raw_flags: dict[str, list[str]] = {}
 
+    def clear_config_defaults(self):
+        for arg in self._cli_args.values():
+            arg.config_default = None
+
     def print_args(self):
 
-        def obtain(arg: CliArgument):
-            return (
-                arg._get_value() if not "full" in self.get_arg("--print-args") else arg
+        args: list[CliArgument] = []
+        print_args_values = self._cli_args["--print-args"]._get_value()
+
+        # Add config args.
+        if "config" in print_args_values:
+            args.extend([a for a in self._cli_args.values() if a.config_default])
+
+        # Add provided args.
+        if "provided" in print_args_values:
+            args.extend(
+                [a for a in self._cli_args.values() if a.long in self._raw_flags.keys()]
             )
 
-        if "all" in self.get_arg("--print-args"):
-            logger().debug(
-                " CLI Arguments: ",
-                {k: obtain(v) for k, v in self._cli_args.items()},
-                force_inline="accepted_values",
-            )
-        elif "provided" in self.get_arg("--print-args"):
-            logger().debug(
-                " CLI Arguments: ",
+        # Add all args.
+        if "all" in print_args_values:
+            args.extend([a for a in self._cli_args.values()])
+
+        # Add specific flag args.
+        for flag in print_args_values:
+            if flag not in ["config", "provided", "all"]:
+                args.append(self._cli_args[f"--{flag}"])
+
+        # Remove duplicates.
+        args = list(dict.fromkeys(args))
+
+        print_args = []
+        for provided_arg in args:
+            try:
+                if provided_arg.long in self._raw_flags.keys():
+                    value = provided_arg._validate_raw_values(
+                        self._raw_flags[provided_arg.long], store=False
+                    )
+                else:
+                    value = provided_arg._get_value()
+            except CliError as e:
+                value = f"{e}"
+            print_args.append(
                 {
-                    k: obtain(v)
-                    for k, v in self._cli_args.items()
-                    if v.provided and k != "--print-args"
-                },
-                force_inline="accepted_values",
+                    "long": provided_arg.long,
+                    "short": provided_arg.short,
+                    "value": value,
+                    "default": provided_arg.default,
+                    "config_default": provided_arg.config_default,
+                    "accepted_values": provided_arg.accepted_values,
+                }
             )
-        else:
-            logger().debug(
-                " CLI Arguments: ",
-                {
-                    k: obtain(v)
-                    for k, v in self._cli_args.items()
-                    if k[2:] in self.get_arg("--print-args")
-                },
-                force_inline="accepted_values",
-            )
+        logger().prompt(
+            " CLI Arguments: ",
+            print_args,
+            data_print={"force_inline": "accepted_values"},
+        )
 
     def check_flag(self, flag: str) -> None:
         """Check if flag is valid."""
@@ -539,16 +580,14 @@ class CliArgumentParser:
         if flag in self._raw_flags:
             del self._raw_flags[flag]
 
-    def get_arg(self, flag: str, allow_default=True, confirm_default=False) -> any:
+    def get_arg(self, flag: str) -> any:
 
         # Check flag.
         self.check_flag(flag)
 
         # Get argument and build prompter
         arg = self._cli_args[flag]
-        prompter = CLiPrompter(
-            allow_defaults=allow_default,
-        )
+        prompter = CLiPrompter()
 
         # Check we already indicated to use default.
         if arg.use_default:
@@ -558,9 +597,13 @@ class CliArgumentParser:
         provided = False
         if flag in self._raw_flags:
             try:
-                # Validate the argument
+                # Consume the flag.
                 provided = True
-                arg._validate_raw_values(self._raw_flags[flag])
+                raw_value = self._raw_flags[flag]
+                del self._raw_flags[flag]
+
+                # Validate the argument
+                arg._validate_raw_values(raw_value)
 
             except CliArgumentRequest as e:
                 e.solve(prompter)
@@ -568,19 +611,25 @@ class CliArgumentParser:
         # Check value integrity.
         value = arg._get_value()
 
+        # Update provided state to reflect if a value is present.
+        provided = provided or (value is not None)
+
         # If the arg is provided without value, confirm default.
         if provided and value is None:
             prompter.allow_default = True
             return CliConfirmRequest(arg).solve(prompter=prompter)
 
         # If the arg is not provided but has a config default, confirm usage.
-        if arg.config_default and not provided:
+        if not provided and arg.config_default:
             prompter.allow_default = True
             return CliConfirmRequest(arg).solve(prompter=prompter)
 
         # If the arg is not provided, use default.
         if not provided:
             arg.use_default = True
+            # Check for required arg.
+            if arg.required and arg.default is None:
+                return CliMissingRequest(arg).solve(prompter=prompter)
 
         # Return the arg value.
         return arg._get_value()
@@ -636,44 +685,6 @@ class CliArgumentParser:
 
         # Store raw flags
         self._raw_flags = {flag: copy.deepcopy(values) for flag, values in flags}
-
-        # Check silent
-        # while len(parsed_args) > 0:
-        #     try:
-        #         res = consume_flag()
-        #         s = res[0]
-        #         values = res[1]
-        #         argument: CliArgument = None
-        #         if not s.startswith("--"):
-        #             if len(s) > 2 and values:
-        #                 raise CliError(
-        #                     f"Combinated short flags {s} cannot have values."
-        #                 )
-        #             for s in s[1:]:
-        #                 short_flag = "-" + s
-        #                 if not short_flag in self._short_cli_args_mapping:
-        #                     raise CliError(f"Unknown short flag {short_flag}.")
-        #                 else:
-        #                     argument = self._cli_args[
-        #                         self._short_cli_args_mapping[short_flag]
-        #                     ]
-        #         else:
-        #             if not s in self._cli_args:
-        #                 raise CliError(f"Unknown flag {s}.")
-        #             argument = self._cli_args[s]
-
-        #         argument._validate_raw_values(values)
-
-        #     except CliError as e:
-        #         if isinstance(e, CliArgumentError):
-        #             try:
-        #                 e.solve()
-        #             except CliError as ce:
-        #                 errors.append(ce)
-        #         else:
-        #             errors.append(e)
-
-        # return errors
 
 
 class CliModule:
@@ -776,7 +787,10 @@ class CliModule:
             self._parser.parse_flags(module_args)
             if self.get_arg("--help"):
                 raise CliHelpRequest("Help requested")
-            elif self.get_arg("--print-args"):
+            if self.get_arg("--blank"):
+                logger().prompt("Blank run requested")
+                self._parser.clear_config_defaults()
+            if self.get_arg("--print-args"):
                 self._parser.print_args()
             result = self.run()
             return result if isinstance(result, int) else 0

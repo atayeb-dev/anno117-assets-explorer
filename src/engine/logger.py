@@ -369,7 +369,6 @@ class Logger:
         self._current_path: list[str | int] = ["root"]
         self._config = None
         self._kwargs: LoggerKwargs = None
-        self._new_lines = 0
 
     def get_config_key(self) -> str:
         return f"loggers.{self._name}"
@@ -401,10 +400,9 @@ class Logger:
             raise RuntimeError("Logger config not loaded yet.")
         return self._config
 
-    def write(self, *args, **kwargs) -> int:
+    def write(self, *args, **kwargs) -> None:
         try:
             def_stream = None
-            self._new_lines = 0
             self._kwargs = LoggerKwargs(self, **kwargs)
             self._indents = [""]
             self._current_path = ["root"]
@@ -426,15 +424,13 @@ class Logger:
         finally:
             self._stream.flush()
             self._indents = [""]
+            self._indents_buffer.seek(0)
+            self._indents_buffer.truncate(0)
             self._kwargs = None
             if def_stream is not None:
                 self._stream = def_stream
 
-        new_lines = self._new_lines
-        self._new_lines = 0
-        return new_lines
-
-    def print(self, *args, **kwargs) -> int:
+    def print(self, *args, **kwargs) -> None:
         if "end" not in kwargs:
             args = [*args, "\n"]
         else:
@@ -442,34 +438,25 @@ class Logger:
             del kwargs["end"]
         return self.write(*args, **kwargs)
 
-    def error(self, *args, **kwargs) -> int:
+    def error(self, *args, **kwargs) -> None:
         args = [f"/;_cross/cr;/ ", *args]
         return self.print(*args, **kwargs)
 
-    def critical(self, *args, **kwargs) -> int:
+    def critical(self, *args, **kwargs) -> None:
         args = [f"/;cr;bo//;_cross/;/ ", *args, "/;"]
         return self.print(*args, **kwargs)
 
-    def success(self, *args, **kwargs) -> int:
+    def success(self, *args, **kwargs) -> None:
         args = [f"/;_check/cg;/ ", *args]
         return self.print(*args, **kwargs)
 
-    def prompt(self, *args, **kwargs) -> int:
+    def prompt(self, *args, **kwargs) -> None:
         args = [f"/;_arrow/cb;bo;/ ", *args]
         return self.print(*args, **kwargs)
 
-    def debug(self, *args, **kwargs) -> int:
+    def debug(self, *args, **kwargs) -> None:
         args = [f"/;cm;bo//;_wrench/;/ ", *args, "/;"]
         return self.print(*args, **kwargs)
-
-    def clean_lines(self, lines: int):
-        while lines > 0:
-            lines -= 1
-            self._stream.write("\x1b[F\x1b[K")
-        self._indents = [""]
-        self._indents_buffer.seek(0)
-        self._indents_buffer.truncate(0)
-        self._stream.flush()
 
     def _indent(self) -> None:
         indents_char = self._indents_buffer.getvalue()
@@ -483,7 +470,6 @@ class Logger:
 
     def _new_line(self, indent_char=" ") -> None:
         self._stream.write("\n")
-        self._new_lines += 1
         indents_char = self._indents[-1]
 
         if len(self._indents) > 1:
