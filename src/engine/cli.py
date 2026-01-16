@@ -128,7 +128,7 @@ class CliConfirmRequest(CliArgumentRequest):
         prompter.prompts = [
             self.argument_name,
             " Confirm default: ",
-            self.argument.default,
+            self.argument.config_default or self.argument.default,
             " or override: ",
         ]
 
@@ -148,7 +148,14 @@ class CliConfirmRequest(CliArgumentRequest):
             ]
 
     def solve(self, prompter):
-        if self.argument._parser._module.get_arg("--auto-confirm"):
+        auto_confirm = False
+        if self.argument.long == "--auto-confirm":
+            auto_confirm = (
+                self.argument.config_default is True or self.argument.default is True
+            )
+        else:
+            auto_confirm = self.argument._parser._module.get_arg("--auto-confirm")
+        if auto_confirm:
             prompter.use_request(self)
             self.argument.use_default = True
             return prompter.end_request()
@@ -620,7 +627,7 @@ class CliArgumentParser:
             return CliConfirmRequest(arg).solve(prompter=prompter)
 
         # If the arg is not provided but has a config default, confirm usage.
-        if not provided and arg.config_default:
+        if not provided and arg.config_default is not None:
             prompter.allow_default = True
             return CliConfirmRequest(arg).solve(prompter=prompter)
 

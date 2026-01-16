@@ -37,6 +37,7 @@
                 }
             }
         },
+        "--auto-confirm": true,
         "--modes": "data-print",
         "--test-data": "tests/medium-data.json tests/small-data.json"
     }
