@@ -127,7 +127,7 @@ class CliConfirmRequest(CliArgumentRequest):
         prompter.allow_default = True
         prompter.prompts = [
             self.argument_name,
-            " Confirm ",
+            " Confirm default: ",
             self.argument.default,
             " or override: ",
         ]
